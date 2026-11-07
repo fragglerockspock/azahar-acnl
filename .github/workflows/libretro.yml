@@ -2,7 +2,7 @@ name: citra-libretro
 
 on:
   push:
-    branches: [ "*" ]
+    branches: [ "*", "acnl/single-screen-layout" ]
     tags: [ "*" ]
   pull_request:
     branches: [ master ]
