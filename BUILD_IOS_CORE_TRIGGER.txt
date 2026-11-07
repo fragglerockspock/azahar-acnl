@@ -1,1 +1,2 @@
 Temporary build trigger for the iOS ARM64 Azahar Libretro core workflow.
+Build trigger refreshed after enabling GitHub Actions.
