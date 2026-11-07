@@ -2,7 +2,7 @@ name: citra-build
 
 on:
   push:
-    branches: [ "*" ]
+    branches-ignore: [ "acnl/single-screen-layout" ]
     tags: [ "*" ]
   pull_request:
     branches: [ master ]

@@ -67,6 +67,7 @@ public:
 };
 
 CitraLibRetro* emu_instance;
+static bool acnl_single_screen = false;
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
@@ -227,6 +228,10 @@ void retro_run() {
     // Check to see if we actually have any config updates to process.
     if (LibRetro::HasUpdatedConfig()) {
         LibRetro::ParseCoreOptions();
+        if (acnl_single_screen) {
+            Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
+            Settings::values.swap_screen = false;
+        }
         Core::System::GetInstance().ApplySettings();
         emu_instance->emu_window->UpdateLayout();
     }
@@ -242,7 +247,9 @@ void retro_run() {
     static bool screens_swapped = false;
     bool screen_swap_btn =
         !!LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
-    if (screen_swap_btn != screen_swap_button_state) {
+    if (acnl_single_screen) {
+        screen_swap_button_state = screen_swap_btn;
+    } else if (screen_swap_btn != screen_swap_button_state) {
         if (LibRetro::settings.swap_screen_mode == "Toggle") {
             if (!screen_swap_button_state)
                 screens_swapped = !screens_swapped;
@@ -378,6 +385,20 @@ static void setup_memory_maps() {
     }
 }
 
+static bool IsAnimalCrossingNewLeaf(u64 program_id) {
+    switch (program_id) {
+    case 0x0004000000086200ULL:
+    case 0x0004000000086300ULL:
+    case 0x0004000000086400ULL:
+    case 0x0004000000198D00ULL:
+    case 0x0004000000198E00ULL:
+    case 0x0004000000198F00ULL:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool do_load_game() {
     const Core::System::ResultStatus load_result{
         Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path)};
@@ -416,6 +437,12 @@ static bool do_load_game() {
 
     u64 program_id{};
     Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
+    acnl_single_screen = IsAnimalCrossingNewLeaf(program_id);
+    if (acnl_single_screen) {
+        Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
+        Settings::values.swap_screen = false;
+        emu_instance->emu_window->UpdateLayout();
+    }
     Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (Settings::values.use_disk_shader_cache) {
@@ -512,6 +539,7 @@ void retro_reset() {
  */
 bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
+    acnl_single_screen = false;
 
 #if CITRA_ARCH(x86_64) && CITRA_HAS_SSE42
     if (!Common::GetCPUCaps().sse4_2) {

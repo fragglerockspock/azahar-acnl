@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   libretro-android:
+    if: ${{ github.ref != 'refs/heads/acnl/single-screen-layout' }}
     runs-on: ubuntu-22.04
     env:
       OS: android
@@ -77,6 +78,7 @@ jobs:
           sbom-path: libretro-android.spdx.json
 
   libretro-linux:
+    if: ${{ github.ref != 'refs/heads/acnl/single-screen-layout' }}
     runs-on: ubuntu-22.04
     env:
       OS: linux
@@ -123,6 +125,7 @@ jobs:
           sbom-path: libretro-linux.spdx.json
 
   libretro-windows:
+    if: ${{ github.ref != 'refs/heads/acnl/single-screen-layout' }}
     runs-on: ubuntu-latest
     env:
       OS: windows
@@ -172,6 +175,7 @@ jobs:
             ./*.zip
           sbom-path: libretro-windows.spdx.json
   libretro-macos:
+    if: ${{ github.ref != 'refs/heads/acnl/single-screen-layout' }}
     runs-on: macos-26
     strategy:
       fail-fast: false
@@ -262,6 +266,7 @@ jobs:
           sbom-path: libretro-ios.spdx.json
 
   libretro-tvos:
+    if: ${{ github.ref != 'refs/heads/acnl/single-screen-layout' }}
     runs-on: macos-26
     env:
       OS: tvos

@@ -2,7 +2,7 @@ name: citra-format
 
 on:
   push:
-    branches: [ "*" ]
+    branches-ignore: [ "acnl/single-screen-layout" ]
   pull_request:
     branches: [ master ]
 
