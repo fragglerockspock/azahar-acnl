@@ -1,0 +1,1 @@
+Temporary build trigger for the iOS ARM64 Azahar Libretro core workflow.
