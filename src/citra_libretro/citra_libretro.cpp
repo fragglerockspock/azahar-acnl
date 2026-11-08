@@ -70,6 +70,7 @@ public:
 
 CitraLibRetro* emu_instance;
 static bool acnl_single_screen = false;
+static bool UpdateAcNlCameraAspect();
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
