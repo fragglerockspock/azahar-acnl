@@ -3,6 +3,7 @@
 // Refer to the LICENSE.txt file included.
 
 #include <array>
+#include <cstring>
 #include <list>
 #include <numeric>
 #include <vector>
@@ -233,7 +234,9 @@ void retro_run() {
             Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
             Settings::values.swap_screen = false;
             Settings::values.aspect_ratio = Settings::AspectRatio::Default;
-            Settings::values.screen_top_stretch = true;
+            const bool camera_updated = UpdateAcNlCameraAspect();
+            Settings::acnl_widescreen_enabled.store(camera_updated);
+            Settings::values.screen_top_stretch = camera_updated;
         }
         Core::System::GetInstance().ApplySettings();
         emu_instance->emu_window->UpdateLayout();
@@ -402,7 +405,35 @@ static bool IsAnimalCrossingNewLeaf(u64 program_id) {
     }
 }
 
+static std::vector<u32> acnl_camera_addresses;
+
+static float AcNlCameraAspect() {
+    return static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
+           static_cast<float>(Settings::acnl_camera_aspect_height.load());
+}
+
+static bool UpdateAcNlCameraAspect() {
+    if (acnl_camera_addresses.empty()) {
+        return false;
+    }
+    const float aspect = AcNlCameraAspect();
+    u32 aspect_bits{};
+    std::memcpy(&aspect_bits, &aspect, sizeof(aspect_bits));
+    auto& system = Core::System::GetInstance();
+    auto process = system.Kernel().GetCurrentProcess();
+    if (!process) {
+        return false;
+    }
+    for (u32 address : acnl_camera_addresses) {
+        system.Memory().Write32(*process, address, aspect_bits);
+    }
+    LOG_INFO(Frontend, "ACNL camera aspect updated to {} at {} locations",
+             aspect, acnl_camera_addresses.size());
+    return true;
+}
+
 static bool PatchAcNlCameraAspect() {
+    acnl_camera_addresses.clear();
     auto& system = Core::System::GetInstance();
     auto process = system.Kernel().GetCurrentProcess();
     if (!process || !process->codeset) {
@@ -425,7 +456,6 @@ static bool PatchAcNlCameraAspect() {
     memory.ReadBlock(*process, rodata.addr, rodata_bytes.data(), rodata_bytes.size());
 
     const std::array<u32, 4> signature{0x42480000, 0x44dac000, 0x41b00000, 0x3fd55555};
-    const u32 new_aspect_bits = 0x400b0df7;
     std::vector<u32> camera_addresses;
 
     auto read_word = [](const std::vector<u8>& bytes, std::size_t offset) -> u32 {
@@ -453,12 +483,9 @@ static bool PatchAcNlCameraAspect() {
     scan_segment(code_bytes, code.addr);
     scan_segment(rodata_bytes, rodata.addr);
 
-    for (u32 address : camera_addresses) {
-        memory.Write32(*process, address, new_aspect_bits);
-    }
-    LOG_INFO(Frontend, "ACNL widescreen: camera signature matches {}, target aspect 2.172727",
-             camera_addresses.size());
-    return !camera_addresses.empty();
+    acnl_camera_addresses = std::move(camera_addresses);
+    LOG_INFO(Frontend, "ACNL widescreen: camera signature matches {}", acnl_camera_addresses.size());
+    return UpdateAcNlCameraAspect();
 }
 
 static bool do_load_game() {
@@ -618,6 +645,7 @@ void retro_reset() {
 bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
     acnl_single_screen = false;
+    acnl_camera_addresses.clear();
     Settings::acnl_widescreen_enabled.store(false);
 
 #if CITRA_ARCH(x86_64) && CITRA_HAS_SSE42
