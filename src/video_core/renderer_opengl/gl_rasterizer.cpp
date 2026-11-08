@@ -260,7 +260,7 @@ void RasterizerOpenGL::SwitchDiskResources(u64 title_id) {
 }
 
 void RasterizerOpenGL::SyncDrawState() {
-    const float scale = Settings::acnl_widescreen_enabled.load() ? 400.0f / 522.0f : 1.0f;
+    const float scale = 1.0f;
     if (vs_data.widescreen_scale != scale) {
         vs_data.widescreen_scale = scale;
         vs_data_dirty = true;
