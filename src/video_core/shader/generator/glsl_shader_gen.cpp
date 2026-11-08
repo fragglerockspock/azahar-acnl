@@ -42,7 +42,8 @@ R"(    mat4 freecam_matrix;
     bool freecam_skip_2d;
 )"
 #endif
-R"(};
+R"(    float widescreen_scale;
+};
 
 const vec2 EPSILON_Z = vec2(0.000001f, -1.00001f);
 
@@ -72,10 +73,12 @@ vec4 ApplyFreeCam(vec4 clip_pos) {
 
 #ifdef ENABLE_FREECAM
 constexpr std::string_view PositionOutput =
-    "    gl_Position = ApplyFreeCam(vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w));\n";
+    "    gl_Position = ApplyFreeCam(vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w));\n"
+    "    gl_Position.x *= widescreen_scale;\n";
 #else
 constexpr std::string_view PositionOutput =
-    "    gl_Position = vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w);\n";
+    "    gl_Position = vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w);\n"
+    "    gl_Position.x *= widescreen_scale;\n";
 #endif
 
 static std::string GetVertexInterfaceDeclaration(bool is_output, bool use_clip_planes,
