@@ -438,13 +438,21 @@ static bool do_load_game() {
     u64 program_id{};
     Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
     acnl_single_screen = IsAnimalCrossingNewLeaf(program_id);
+    Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
+
     if (acnl_single_screen) {
-        LibRetro::DisplayMessage("Animal Crossing: New Leaf detected");
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
+        Settings::values.aspect_ratio = Settings::AspectRatio::Default;
+        Settings::values.screen_top_stretch = false;
         emu_instance->emu_window->UpdateLayout();
+        LOG_INFO(Frontend, "Animal Crossing: New Leaf detected (program ID: 0x{:016X})",
+                 program_id);
+        LibRetro::DisplayMessage("Animal Crossing: New Leaf detected");
+    } else {
+        LOG_INFO(Frontend, "3DS title not identified as Animal Crossing: New Leaf (program ID: 0x{:016X})",
+                 program_id);
     }
-    Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (Settings::values.use_disk_shader_cache) {
         Core::System::GetInstance().GPU().Renderer().Rasterizer()->LoadDefaultDiskResources(
