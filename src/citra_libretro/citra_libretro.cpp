@@ -439,6 +439,7 @@ static bool do_load_game() {
     Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
     acnl_single_screen = IsAnimalCrossingNewLeaf(program_id);
     if (acnl_single_screen) {
+        LibRetro::DisplayMessage("Animal Crossing: New Leaf detected");
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
         emu_instance->emu_window->UpdateLayout();
