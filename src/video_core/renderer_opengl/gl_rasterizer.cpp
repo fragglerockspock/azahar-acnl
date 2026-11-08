@@ -4,6 +4,7 @@
 
 #include "common/alignment.h"
 #include "common/assert.h"
+#include "common/settings.h"
 #include "common/literals.h"
 #include "common/logging/log.h"
 #include "common/math_util.h"
@@ -259,6 +260,11 @@ void RasterizerOpenGL::SwitchDiskResources(u64 title_id) {
 }
 
 void RasterizerOpenGL::SyncDrawState() {
+    const float scale = Settings::acnl_widescreen_enabled.load() ? 400.0f / 522.0f : 1.0f;
+    if (vs_data.widescreen_scale != scale) {
+        vs_data.widescreen_scale = scale;
+        vs_data_dirty = true;
+    }
     SyncDrawUniforms();
 
     // SyncClipEnabled();
