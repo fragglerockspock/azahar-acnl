@@ -252,6 +252,9 @@ LayoutGeometry ComputeLayoutGeometry() {
             baseY = Core::kScreenTopHeight;
             emulated_pointer = false;
         }
+        if (!swapped && Settings::acnl_widescreen_enabled.load()) {
+            baseX = 522;
+        }
         baseX *= scaling;
         baseY *= scaling;
         break;
