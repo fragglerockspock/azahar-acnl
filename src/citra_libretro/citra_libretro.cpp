@@ -231,6 +231,8 @@ void retro_run() {
         if (acnl_single_screen) {
             Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
             Settings::values.swap_screen = false;
+            Settings::values.aspect_ratio = Settings::AspectRatio::Default;
+            Settings::values.screen_top_stretch = true;
         }
         Core::System::GetInstance().ApplySettings();
         emu_instance->emu_window->UpdateLayout();
@@ -438,13 +440,14 @@ static bool do_load_game() {
     u64 program_id{};
     Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
     acnl_single_screen = IsAnimalCrossingNewLeaf(program_id);
+    Settings::acnl_widescreen_enabled.store(acnl_single_screen);
     Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (acnl_single_screen) {
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
         Settings::values.aspect_ratio = Settings::AspectRatio::Default;
-        Settings::values.screen_top_stretch = false;
+        Settings::values.screen_top_stretch = true;
         emu_instance->emu_window->UpdateLayout();
         LOG_INFO(Frontend, "Animal Crossing: New Leaf detected (program ID: 0x{:016X})",
                  program_id);
@@ -549,6 +552,7 @@ void retro_reset() {
 bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
     acnl_single_screen = false;
+    Settings::acnl_widescreen_enabled.store(false);
 
 #if CITRA_ARCH(x86_64) && CITRA_HAS_SSE42
     if (!Common::GetCPUCaps().sse4_2) {
