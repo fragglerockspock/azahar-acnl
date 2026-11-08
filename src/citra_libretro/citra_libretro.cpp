@@ -2,6 +2,7 @@
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
 
+#include <array>
 #include <list>
 #include <numeric>
 #include <vector>
@@ -401,6 +402,71 @@ static bool IsAnimalCrossingNewLeaf(u64 program_id) {
     }
 }
 
+static bool PatchAcNlCameraAspect() {
+    auto& system = Core::System::GetInstance();
+    auto process = system.Kernel().GetCurrentProcess();
+    if (!process || !process->codeset) {
+        LOG_WARNING(Frontend, "ACNL widescreen: no active process code set");
+        return false;
+    }
+
+    const auto& code = process->codeset->CodeSegment();
+    const auto& rodata = process->codeset->RODataSegment();
+    if (code.size < 16 || rodata.size < 8 || code.size > 16 * 1024 * 1024 ||
+        rodata.size > 16 * 1024 * 1024) {
+        LOG_WARNING(Frontend, "ACNL widescreen: invalid code or read-only data segment");
+        return false;
+    }
+
+    auto& memory = system.Memory();
+    std::vector<u8> code_bytes(code.size);
+    std::vector<u8> rodata_bytes(rodata.size);
+    memory.ReadBlock(*process, code.addr, code_bytes.data(), code_bytes.size());
+    memory.ReadBlock(*process, rodata.addr, rodata_bytes.data(), rodata_bytes.size());
+
+    const std::array<u32, 4> signature{0x42480000, 0x44dac000, 0x41b00000, 0x3fd55555};
+    const u32 new_aspect_bits = 0x400b0ba3;
+    std::vector<u32> camera_addresses;
+
+    auto read_word = [](const std::vector<u8>& bytes, std::size_t offset) -> u32 {
+        return static_cast<u32>(bytes[offset]) |
+               (static_cast<u32>(bytes[offset + 1]) << 8) |
+               (static_cast<u32>(bytes[offset + 2]) << 16) |
+               (static_cast<u32>(bytes[offset + 3]) << 24);
+    };
+
+    for (std::size_t offset = 0; offset + 16 <= code_bytes.size(); offset += 4) {
+        bool matches = true;
+        for (std::size_t index = 0; index < signature.size(); ++index) {
+            if (read_word(code_bytes, offset + index * 4) != signature[index]) {
+                matches = false;
+                break;
+            }
+        }
+        if (!matches) {
+            continue;
+        }
+
+        const u32 signature_address = code.addr + static_cast<u32>(offset);
+        for (std::size_t reference = 0; reference + 8 <= rodata_bytes.size(); reference += 4) {
+            if (read_word(rodata_bytes, reference) != signature_address) {
+                continue;
+            }
+            const u32 candidate = read_word(rodata_bytes, reference + 4);
+            if (candidate >= code.addr && candidate < code.addr + code.size - 16 &&
+                memory.Read32(*process, candidate + 12) == signature[3]) {
+                camera_addresses.push_back(candidate + 12);
+            }
+        }
+    }
+
+    for (u32 address : camera_addresses) {
+        memory.Write32(*process, address, new_aspect_bits);
+    }
+    LOG_INFO(Frontend, "ACNL widescreen: patched {} camera aspect values", camera_addresses.size());
+    return !camera_addresses.empty();
+}
+
 static bool do_load_game() {
     const Core::System::ResultStatus load_result{
         Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path)};
@@ -444,6 +510,7 @@ static bool do_load_game() {
     Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (acnl_single_screen) {
+        PatchAcNlCameraAspect();
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
         Settings::values.aspect_ratio = Settings::AspectRatio::Default;
