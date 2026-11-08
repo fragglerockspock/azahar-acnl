@@ -489,6 +489,7 @@ static bool PatchAcNlCameraAspect() {
 }
 
 static bool do_load_game() {
+    acnl_camera_addresses.clear();
     const Core::System::ResultStatus load_result{
         Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path)};
 
