@@ -19,6 +19,8 @@
 
 namespace Settings {
 
+inline std::atomic<bool> acnl_widescreen_enabled{false};
+
 enum class GraphicsAPI {
     Software = 0,
     OpenGL = 1,
