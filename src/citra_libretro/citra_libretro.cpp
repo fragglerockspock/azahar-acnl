@@ -435,35 +435,29 @@ static bool PatchAcNlCameraAspect() {
                (static_cast<u32>(bytes[offset + 3]) << 24);
     };
 
-    for (std::size_t offset = 0; offset + 16 <= code_bytes.size(); offset += 4) {
-        bool matches = true;
-        for (std::size_t index = 0; index < signature.size(); ++index) {
-            if (read_word(code_bytes, offset + index * 4) != signature[index]) {
-                matches = false;
-                break;
+    const auto scan_segment = [&](const std::vector<u8>& bytes, u32 base) {
+        for (std::size_t offset = 0; offset + 16 <= bytes.size(); offset += 4) {
+            bool matches = true;
+            for (std::size_t index = 0; index < signature.size(); ++index) {
+                if (read_word(bytes, offset + index * 4) != signature[index]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                camera_addresses.push_back(base + static_cast<u32>(offset) + 12);
             }
         }
-        if (!matches) {
-            continue;
-        }
+    };
 
-        const u32 signature_address = code.addr + static_cast<u32>(offset);
-        for (std::size_t reference = 0; reference + 8 <= rodata_bytes.size(); reference += 4) {
-            if (read_word(rodata_bytes, reference) != signature_address) {
-                continue;
-            }
-            const u32 candidate = read_word(rodata_bytes, reference + 4);
-            if (candidate >= code.addr && candidate < code.addr + code.size - 16 &&
-                memory.Read32(*process, candidate + 12) == signature[3]) {
-                camera_addresses.push_back(candidate + 12);
-            }
-        }
-    }
+    scan_segment(code_bytes, code.addr);
+    scan_segment(rodata_bytes, rodata.addr);
 
     for (u32 address : camera_addresses) {
         memory.Write32(*process, address, new_aspect_bits);
     }
-    LOG_INFO(Frontend, "ACNL widescreen: patched {} camera aspect values", camera_addresses.size());
+    LOG_INFO(Frontend, "ACNL widescreen: camera signature matches {}, target aspect 2.172727",
+             camera_addresses.size());
     return !camera_addresses.empty();
 }
 
@@ -510,11 +504,16 @@ static bool do_load_game() {
     Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (acnl_single_screen) {
-        PatchAcNlCameraAspect();
+        const bool camera_patched = PatchAcNlCameraAspect();
+        Settings::acnl_widescreen_enabled.store(camera_patched);
+        if (!camera_patched) {
+            LOG_WARNING(Frontend, "ACNL widescreen: no camera signature; retaining 5:3 output");
+            LibRetro::DisplayMessage("ACNL widescreen camera patch not found");
+        }
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
         Settings::values.aspect_ratio = Settings::AspectRatio::Default;
-        Settings::values.screen_top_stretch = true;
+        Settings::values.screen_top_stretch = camera_patched;
         emu_instance->emu_window->UpdateLayout();
         LOG_INFO(Frontend, "Animal Crossing: New Leaf detected (program ID: 0x{:016X})",
                  program_id);
