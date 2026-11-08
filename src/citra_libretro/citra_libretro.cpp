@@ -425,7 +425,7 @@ static bool PatchAcNlCameraAspect() {
     memory.ReadBlock(*process, rodata.addr, rodata_bytes.data(), rodata_bytes.size());
 
     const std::array<u32, 4> signature{0x42480000, 0x44dac000, 0x41b00000, 0x3fd55555};
-    const u32 new_aspect_bits = 0x400b0ba3;
+    const u32 new_aspect_bits = 0x400b0df7;
     std::vector<u32> camera_addresses;
 
     auto read_word = [](const std::vector<u8>& bytes, std::size_t offset) -> u32 {
