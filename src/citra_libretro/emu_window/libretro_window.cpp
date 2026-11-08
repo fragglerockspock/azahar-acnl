@@ -253,7 +253,10 @@ LayoutGeometry ComputeLayoutGeometry() {
             emulated_pointer = false;
         }
         if (!swapped && Settings::acnl_widescreen_enabled.load()) {
-            baseX = 522;
+            baseX = static_cast<unsigned>(
+                (static_cast<u64>(baseY) * Settings::acnl_camera_aspect_width.load() +
+                 Settings::acnl_camera_aspect_height.load() / 2) /
+                Settings::acnl_camera_aspect_height.load());
         }
         baseX *= scaling;
         baseY *= scaling;
