@@ -6,6 +6,8 @@
 #include <glad/glad.h>
 #endif
 #include <libretro.h>
+#include <algorithm>
+#include <cmath>
 
 #include "audio_core/audio_types.h"
 #include "citra_libretro/citra_libretro.h"
@@ -205,7 +207,40 @@ void EmuWindow_LibRetro::PollEvents() {
 
     // TODO: Poll for right click for motion emu
 
-    if (enableEmulatedPointer && tracker) {
+    const bool acnl_touch = Settings::acnl_widescreen_enabled.load() &&
+                            Settings::values.layout_option.GetValue() ==
+                                Settings::LayoutOption::SingleScreen;
+    if ((enableEmulatedPointer || acnl_touch) && tracker) {
+        if (acnl_touch) {
+            static int touch_x = 160;
+            static int touch_y = 120;
+            const float dx = static_cast<float>(LibRetro::CheckInput(
+                                 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                 RETRO_DEVICE_ID_ANALOG_X)) / 32767.0f;
+            const float dy = static_cast<float>(LibRetro::CheckInput(
+                                 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                 RETRO_DEVICE_ID_ANALOG_Y)) / 32767.0f;
+            if (std::abs(dx) > 0.18f) {
+                touch_x = std::clamp(touch_x + static_cast<int>(dx * 12.0f), 0, 319);
+            }
+            if (std::abs(dy) > 0.18f) {
+                touch_y = std::clamp(touch_y + static_cast<int>(dy * 12.0f), 0, 239);
+            }
+            const bool pressed = LibRetro::CheckInput(
+                0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3) != 0;
+            if (pressed) {
+                if (hasTouched) {
+                    TouchMoved(touch_x, touch_y);
+                } else {
+                    TouchPressed(touch_x, touch_y);
+                    hasTouched = true;
+                }
+            } else if (hasTouched) {
+                hasTouched = false;
+                TouchReleased();
+            }
+            return;
+        }
         tracker->Update(width, height, GetFramebufferLayout());
 
         if (tracker->IsPressed()) {
