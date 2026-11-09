@@ -177,14 +177,7 @@ void RasterizerVulkan::LoadDefaultDiskResources(
 }
 
 void RasterizerVulkan::SyncDrawState() {
-    const bool ui_draw = Settings::acnl_widescreen_enabled.load() &&
-                         regs.framebuffer.output_merger.alphablend_enable != 0 &&
-                         regs.framebuffer.output_merger.depth_test_enable == 0 &&
-                         regs.framebuffer.output_merger.depth_write_enable == 0;
-    const float scale = ui_draw
-                            ? 400.0f * static_cast<float>(Settings::acnl_camera_aspect_height.load()) /
-                                  (240.0f * static_cast<float>(Settings::acnl_camera_aspect_width.load()))
-                            : 1.0f;
+    const float scale = 1.0f;
     if (vs_data.widescreen_scale != scale) {
         vs_data.widescreen_scale = scale;
         vs_data_dirty = true;
