@@ -49,3 +49,7 @@ A local C++17 harness compiled the actual backend with `-Wall -Wextra -Werror` a
 ### Single-screen audit
 
 Existing `LayeredFS` changes only apply horizontal RootPane scale compensation. They do not reproduce Leaf's map, pocket/inventory, keyboard, or other scene grafting. Leaf has additional native `LayoutPatch::GraftWindow`, `Ui::Initialize`, `Ui::FrameRegions`, `Ui::Buttons`, `UiPatcher`, and `PocketStacks` components. The existing camera and RootPane changes were retained. The ToolRing port must not be described as the complete single-screen Leaf port.
+
+### Dialogue inspection
+
+The APK has native references to `Layout/msgWin/msg_win.arc` at 0x20BB34C, `Layout/common/cmn_dialog_A.arc` at 0x20BB6A4, and `choice_bubble` at 0x20C5000. It exports `Leaf::Ui::NotifyConfirm()` (0x20CB87C). These establish dialogue/choice UI handling, not a universal A-button prompt. `LeafCursorView.drawButton` draws close and expand/collapse symbols; the verified explicit A hint in Android strings is `leaf_tool_ring_put_away` = `A: put away`. A normal-dialogue "Press A" overlay has not been established by this inspection.

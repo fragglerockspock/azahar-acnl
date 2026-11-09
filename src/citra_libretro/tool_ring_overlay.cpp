@@ -75,7 +75,9 @@ void RenderToolRing(int width,int height) {
         GLint linked=0;glGetProgramiv(program,GL_LINK_STATUS,&linked);if(!linked){glDeleteProgram(program);program=0;return;}
         glGenTextures(1,&texture);glGenVertexArrays(1,&vao);
     }
-    GLint old_viewport[4];glGetIntegerv(GL_VIEWPORT,old_viewport);
+    GLint old_viewport[4],old_framebuffer=0;glGetIntegerv(GL_VIEWPORT,old_viewport);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&old_framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,static_cast<GLuint>(GetFramebuffer()));
     glUseProgram(program);glBindVertexArray(vao);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
@@ -83,7 +85,7 @@ void RenderToolRing(int width,int height) {
     glUniform1i(glGetUniformLocation(program,"ring"),0);
     glViewport(0,0,width,height);glDisable(GL_DEPTH_TEST);glDisable(GL_SCISSOR_TEST);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES,0,3);
-    glViewport(old_viewport[0],old_viewport[1],old_viewport[2],old_viewport[3]);glBindTexture(GL_TEXTURE_2D,0);glBindVertexArray(0);glUseProgram(0);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+    glViewport(old_viewport[0],old_viewport[1],old_viewport[2],old_viewport[3]);glBindTexture(GL_TEXTURE_2D,0);glBindVertexArray(0);glUseProgram(0);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glPixelStorei(GL_UNPACK_ALIGNMENT,4);glBindFramebuffer(GL_DRAW_FRAMEBUFFER,static_cast<GLuint>(old_framebuffer));
 #endif
 }
 }
