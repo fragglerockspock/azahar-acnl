@@ -13,6 +13,7 @@
 #include "common/swap.h"
 #include "core/file_sys/layered_fs.h"
 #include "core/file_sys/patch.h"
+#include "common/settings.h"
 
 SERIALIZE_EXPORT_IMPL(FileSys::LayeredFS)
 
@@ -75,6 +76,51 @@ void LayeredFS::Load() {
     if (load_relocations) {
         LoadRelocations();
         LoadExtRelocations();
+    }
+
+    if (Settings::acnl_widescreen_enabled.load()) {
+        const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
+                             static_cast<float>(Settings::acnl_camera_aspect_height.load());
+        const float correction = (400.0f / 240.0f) / aspect;
+        if (correction > 0.0f && correction < 2.0f) {
+            std::size_t patched_panes = 0;
+            for (auto& [path, file] : file_path_map) {
+                if (path.find("Layout/") == std::string::npos ||
+                    path.size() < 4 || path.substr(path.size() - 4) != ".arc" ||
+                    file->relocation.type != 0 || file->relocation.size > 4 * 1024 * 1024) {
+                    continue;
+                }
+                std::vector<u8> bytes(file->relocation.size);
+                if (romfs->ReadFile(file->relocation.original_offset, bytes.size(),
+                                    bytes.data()) != bytes.size()) {
+                    continue;
+                }
+                if (bytes.size() < 80 || std::memcmp(bytes.data(), "darc", 4) != 0) {
+                    continue;
+                }
+                std::size_t changes = 0;
+                for (std::size_t i = 0; i + 76 <= bytes.size(); ++i) {
+                    if (std::memcmp(bytes.data() + i, "pan1", 4) != 0 ||
+                        std::memcmp(bytes.data() + i + 12, "RootPane", 8) != 0) {
+                        continue;
+                    }
+                    float original{};
+                    std::memcpy(&original, bytes.data() + i + 60, sizeof(original));
+                    if (original != 1.0f) {
+                        continue;
+                    }
+                    std::memcpy(bytes.data() + i + 60, &correction, sizeof(correction));
+                    ++changes;
+                }
+                if (changes != 0) {
+                    file->relocation.type = 2;
+                    file->relocation.patched_file = std::move(bytes);
+                    patched_panes += changes;
+                }
+            }
+            LOG_INFO(Service_FS, "ACNL layout compensation applied to {} root panes",
+                     patched_panes);
+        }
     }
 
     RebuildMetadata();
