@@ -44,7 +44,7 @@ R2 toggles with 200ms debounce; D-pad steps around eight positions; left-stick m
 
 ### Verification
 
-A local C++17 harness compiled the actual backend with `-Wall -Wextra -Werror` against an in-memory guest fixture. Checks passed for signature discovery, branch destinations, trampoline installation, archive icon lookup using the supplied item_icon.arc, inventory snapshots, equipment request literal, successful old-equipment return, locked-slot rejection, invalid-pointer skip, reset, and invalid selection rejection. This is synthetic integration verification, not an iPhone gameplay test. iOS compilation and device behavior must be tracked separately.
+`python tools/test_leaf_tool_ring.py` runs the reproducible synthetic guest checks (requires g++). The C++17 harness compiles the actual backend with `-Wall -Wextra -Werror` against an in-memory guest fixture. Checks passed for signature discovery, branch destinations, trampoline installation, archive icon lookup using the supplied item_icon.arc, inventory snapshots, equipment request literal, successful old-equipment return, locked-slot rejection, invalid-pointer skip, reset, and invalid selection rejection. This is synthetic integration verification, not an iPhone gameplay test. iOS compilation and device behavior must be tracked separately.
 
 ### Single-screen audit
 

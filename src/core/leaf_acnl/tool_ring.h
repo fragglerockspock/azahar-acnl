@@ -3,8 +3,12 @@
 #include <vector>
 #include "common/common_types.h"
 
-namespace Core { class System; }
-namespace Kernel { class Process; }
+namespace Core {
+class System;
+}
+namespace Kernel {
+class Process;
+}
 namespace LeafACNL {
 struct Tool {
     int slot;
