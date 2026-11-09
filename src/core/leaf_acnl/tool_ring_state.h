@@ -7,6 +7,24 @@
 
 namespace LeafACNL {
 
+struct EquipmentTransfer {
+    std::uint32_t source_first;
+    std::uint32_t source_second;
+    std::uint32_t destination_first;
+    std::uint32_t destination_second;
+};
+
+inline std::optional<EquipmentTransfer> ComputeEquipmentTransfer(
+    std::uint32_t source_base, std::uint32_t destination_base, int slot) {
+    if (slot < 0 || slot > 15 || source_base > UINT32_MAX - 0x28 ||
+        destination_base > UINT32_MAX - 0x3e) {
+        return std::nullopt;
+    }
+    const auto destination = destination_base + static_cast<std::uint32_t>(slot) * 4;
+    return EquipmentTransfer{source_base + 0x26, source_base + 0x28,
+                             destination, destination + 2};
+}
+
 class ToolRingState {
 public:
     void Reset() {
