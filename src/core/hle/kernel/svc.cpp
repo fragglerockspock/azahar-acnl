@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/tool_ring.h"
 // Copyright 2014-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -2445,6 +2446,11 @@ void SVC::CallSVC(u32 immediate) {
 
     DEBUG_ASSERT_MSG(kernel.GetCurrentProcess()->status == ProcessStatus::Running,
                      "Running threads from exiting processes is unimplemented");
+
+    if (LeafACNL::HandleSvc(system, immediate)) {
+        system.perf_stats->EndSVCProcessing();
+        return;
+    }
 
     const FunctionDef* info = GetSVCInfo(immediate);
     LOG_TRACE(Kernel_SVC, "calling {}", info->name);
