@@ -27,6 +27,9 @@ void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t 
 /// Calls back to LibRetro to poll input.
 /// @see retro_input_poll_t
 void PollInput();
+bool ToolRingVisible();
+int ToolRingSelected();
+void RenderToolRing(int width,int height);
 
 /// Gets the sensor interface for motion input
 bool GetSensorInterface(struct retro_sensor_interface* sensor_interface);

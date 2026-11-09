@@ -14,6 +14,7 @@
 #include "core/file_sys/layered_fs.h"
 #include "core/file_sys/patch.h"
 #include "common/settings.h"
+#include "core/leaf_acnl/tool_ring.h"
 
 SERIALIZE_EXPORT_IMPL(FileSys::LayeredFS)
 
@@ -81,6 +82,11 @@ void LayeredFS::Load() {
     }
 
     if (acnl_ui_patch) {
+        for (const auto& [path,file] : file_path_map) {
+            if (path.size()<27 || path.substr(path.size()-27)!="Layout/ItemWin/item_icon.arc" || file->relocation.size>4*1024*1024) continue;
+            std::vector<u8> bytes(file->relocation.size);
+            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) LeafACNL::SetToolIconArchive(bytes);
+        }
         const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
                              static_cast<float>(Settings::acnl_camera_aspect_height.load());
         const float correction = (400.0f / 240.0f) / aspect;

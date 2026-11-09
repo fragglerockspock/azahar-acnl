@@ -5,6 +5,9 @@
 #include <mutex>
 #include <optional>
 #include <utility>
+#include <cstring>
+#include <unordered_map>
+#include <string>
 #include "common/logging/log.h"
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
@@ -17,6 +20,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 using Pattern = std::vector<std::pair<u32, u32>>;
 std::mutex mutex;
+std::unordered_map<u16,std::vector<u8>> icons;
 struct State {
     bool located = false;
     u32 entry = 0, original = 0, equip = 0, global = 0, pointer_offset = 0;
@@ -35,7 +39,11 @@ std::optional<Tool> Classify(u32 item, int slot) {
     for (auto kind : kinds) {
         auto [first, last] = state.ranges[kind];
         const u32 id = item & 0x7fff;
-        if (id >= first && id <= last) return Tool{slot, static_cast<u8>(kind), static_cast<u8>(item - first)};
+        if (id >= first && id <= last) {
+            constexpr u16 icon_ids[6][4]={{319,319,350,322},{325,325,353,326},{323,323,352,324},{317,317,351,318},{363,363,365,364},{327,327,354,328}};
+            const auto variant=static_cast<u8>(item-first);
+            return Tool{slot,static_cast<u8>(kind),variant,kind==21 ? u16{482} : icon_ids[kind-14][variant&3]};
+        }
     }
     return std::nullopt;
 }
@@ -55,6 +63,35 @@ u32 Branch(u32 from, u32 to, bool link = false) {
 void ResetToolRing() {
     std::lock_guard lock(mutex);
     state = State{};
+    icons.clear();
+}
+void SetToolIconArchive(const std::vector<u8>& bytes) {
+    std::lock_guard lock(mutex);
+    if (bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return;
+    auto read=[&](size_t p)->u32 {u32 v=0;if(p<=bytes.size()-4)std::memcpy(&v,bytes.data()+p,4);return v;};
+    const size_t table=read(16);
+    if(table>bytes.size()-12)return;
+    const size_t count=read(table+8);
+    if(count>(bytes.size()-table)/12)return;
+    const size_t names=table+count*12;
+    for(size_t i=0;i<count;++i) {
+        const u32 name=read(table+i*12);
+        if(name>>24)continue;
+        size_t pos=names+(name&0xffffff);
+        std::string text;
+        while(pos+1<bytes.size() && bytes[pos] && bytes[pos+1]==0 && text.size()<64) {text+=static_cast<char>(bytes[pos]);pos+=2;}
+        if(text.size()!=13 || text.substr(0,4)!="icn_" || text.substr(7)!=".bclim")continue;
+        if(text[4]<'0'||text[4]>'9'||text[5]<'0'||text[5]>'9'||text[6]<'0'||text[6]>'9')continue;
+        const u16 id=static_cast<u16>((text[4]-'0')*100+(text[5]-'0')*10+text[6]-'0');
+        const size_t offset=read(table+i*12+4),size=read(table+i*12+8);
+        if(size<40 || size>65536 || offset>bytes.size() || size>bytes.size()-offset)continue;
+        icons[id]=std::vector<u8>(bytes.begin()+offset,bytes.begin()+offset+size);
+    }
+}
+std::vector<u8> ToolIcon(u16 icon) {
+    std::lock_guard lock(mutex);
+    const auto it=icons.find(icon);
+    return it==icons.end() ? std::vector<u8>{} : it->second;
 }
 bool Locate(Core::System& system, Kernel::Process& process) {
     std::lock_guard lock(mutex);
@@ -179,11 +216,12 @@ bool HandleSvc(Core::System& system,u32 immediate) {
     const bool returning = pc==state.cave+0x1c || pc==state.cave+0x20;
     if (!returning && pc!=state.cave+4 && pc!=state.cave+8) return false;
     auto& memory = system.Memory();
-    if (state.global > UINT32_MAX-state.pointer_offset || !Valid(memory,*process,state.global+state.pointer_offset,4)) return false;
+    const auto skip=[&](){state.ready=false;state.pending.reset();state.returning.reset();if(!returning)cpu.SetReg(0,0);return true;};
+    if (state.global > UINT32_MAX-state.pointer_offset || !Valid(memory,*process,state.global+state.pointer_offset,4)) return skip();
     const u32 base = memory.Read32(*process,state.global+state.pointer_offset);
-    if (base > UINT32_MAX-state.inventory_offset) return false;
+    if (base > UINT32_MAX-state.inventory_offset) return skip();
     const u32 inventory = base+state.inventory_offset;
-    if (!Valid(memory,*process,base,0x2a) || !Valid(memory,*process,inventory,0x50)) return false;
+    if (!Valid(memory,*process,base,0x2a) || !Valid(memory,*process,inventory,0x50)) return skip();
     if (returning) {
         if (cpu.GetReg(0) && state.returning) {
             const u32 item = memory.Read16(*process,base+0x26) | (static_cast<u32>(memory.Read16(*process,base+0x28))<<16);

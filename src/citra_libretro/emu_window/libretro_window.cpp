@@ -80,6 +80,7 @@ void EmuWindow_LibRetro::SwapBuffers() {
         if (enableEmulatedPointer && tracker) {
             tracker->Render(width, height);
         }
+        LibRetro::RenderToolRing(width,height);
         LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), 0);
         current_state.Apply();

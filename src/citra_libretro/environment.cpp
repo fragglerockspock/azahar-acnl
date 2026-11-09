@@ -94,13 +94,13 @@ void PollToolRing() {
                 const auto& tool=tools[i];
                 const char* name="Tool";
                 switch(tool.kind) {
-                case 14:name="Shovel";break;
-                case 15:name="Axe";break;
-                case 16:name="Net";break;
-                case 17:name="Rod";break;
-                case 18:name="Can";break;
-                case 19:name="Slingshot";break;
-                case 21:name="Hammer";break;
+                case 14:name="Axe";break;
+                case 15:name="Net";break;
+                case 16:name="Rod";break;
+                case 17:name="Shovel";break;
+                case 18:name="Slingshot";break;
+                case 19:name="Can";break;
+                case 21:name="Megaphone";break;
                 }
                 message+=(static_cast<int>(i)==tool_selected ? " [" : " ");
                 message+=name;
@@ -115,6 +115,9 @@ void PollToolRing() {
     previous_tool_buttons=buttons;
 }
 }
+bool ToolRingVisible() {return tool_ring_open;}
+int ToolRingSelected() {return tool_selected;}
+
 void PollInput() {
     input_poll_cb();
     PollToolRing();
