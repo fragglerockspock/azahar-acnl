@@ -10,17 +10,14 @@
 #include "core/leaf_acnl/tool_ring.h"
 #ifdef ENABLE_OPENGL
 #include <glad/glad.h>
-#include "video_core/texture/texture_decode.h"
 #endif
+#include "video_core/texture/texture_decode.h"
 
 namespace LibRetro {
-void RenderToolRing(int width, int height) {
-#ifdef ENABLE_OPENGL
+void RenderToolRing(int width, int height, void* framebuffer, size_t pitch) {
     if (!ToolRingVisible() || width <= 0 || height <= 0)
         return;
     const auto tools = LeafACNL::Tools();
-    if (tools.empty())
-        return;
     const int h = 360, w = std::max(1, width * h / height);
     std::vector<u8> image(static_cast<size_t>(w) * h * 4);
     for (size_t i = 0; i < image.size(); i += 4) {
@@ -49,7 +46,7 @@ void RenderToolRing(int width, int height) {
                 if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= radius * radius)
                     pixel(x, y, color);
     };
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; !tools.empty() && i < 8; ++i) {
         const double angle = i * 3.141592653589793 / 4 - 3.141592653589793 / 2;
         const double cx = w / 2.0 + std::cos(angle) * h * 0.22,
                      cy = h * 0.56 + std::sin(angle) * h * 0.22;
@@ -99,6 +96,45 @@ void RenderToolRing(int width, int height) {
             }
         }
     }
+    if (tools.empty()) {
+        constexpr std::array<std::array<u8,5>,26> glyphs{{
+            {{0x7e,0x11,0x11,0x11,0x7e}},{{0x7f,0x49,0x49,0x49,0x36}},{{0x3e,0x41,0x41,0x41,0x22}},
+            {{0x7f,0x41,0x41,0x22,0x1c}},{{0x7f,0x49,0x49,0x49,0x41}},{{0x7f,0x09,0x09,0x09,0x01}},
+            {{0x3e,0x41,0x49,0x49,0x7a}},{{0x7f,0x08,0x08,0x08,0x7f}},{{0x41,0x41,0x7f,0x41,0x41}},
+            {{0x20,0x40,0x41,0x3f,0x01}},{{0x7f,0x08,0x14,0x22,0x41}},{{0x7f,0x40,0x40,0x40,0x40}},
+            {{0x7f,0x02,0x0c,0x02,0x7f}},{{0x7f,0x04,0x08,0x10,0x7f}},{{0x3e,0x41,0x41,0x41,0x3e}},
+            {{0x7f,0x09,0x09,0x09,0x06}},{{0x3e,0x41,0x51,0x21,0x5e}},{{0x7f,0x09,0x19,0x29,0x46}},
+            {{0x46,0x49,0x49,0x49,0x31}},{{0x01,0x01,0x7f,0x01,0x01}},{{0x3f,0x40,0x40,0x40,0x3f}},
+            {{0x1f,0x20,0x40,0x20,0x1f}},{{0x3f,0x40,0x38,0x40,0x3f}},{{0x63,0x14,0x08,0x14,0x63}},
+            {{0x07,0x08,0x70,0x08,0x07}},{{0x61,0x51,0x49,0x45,0x43}}
+        }};
+        const auto message=LeafACNL::ToolRingStatus();
+        const int scale=std::max(1,std::min(2,(w-24)/std::max(1,static_cast<int>(message.size())*6)));
+        const int left=(w-static_cast<int>(message.size())*6*scale)/2;
+        for(size_t i=0;i<message.size();++i) {
+            if(message[i]<'A'||message[i]>'Z')continue;
+            const auto& glyph=glyphs[message[i]-'A'];
+            for(int x=0;x<5;++x)for(int y=0;y<7;++y)if(glyph[x]&(1<<y))
+                for(int sx=0;sx<scale;++sx)for(int sy=0;sy<scale;++sy)
+                    pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,h/2+y*scale+sy,{255,255,255,255});
+        }
+    }
+    if (framebuffer) {
+        if (pitch < static_cast<size_t>(width)*4) return;
+        static bool announced=false;
+        if(!announced){LOG_INFO(Frontend,"Leaf ToolRing software overlay active");announced=true;}
+        auto* dest=static_cast<u8*>(framebuffer);
+        for(int y=0;y<height;++y)for(int x=0;x<width;++x) {
+            const size_t source=(static_cast<size_t>(y)*h/height*w+static_cast<size_t>(x)*w/width)*4;
+            const size_t target=static_cast<size_t>(y)*pitch+static_cast<size_t>(x)*4;
+            const unsigned alpha=image[source+3];
+            dest[target]=(image[source+2]*alpha+dest[target]*(255-alpha)+127)/255;
+            dest[target+1]=(image[source+1]*alpha+dest[target+1]*(255-alpha)+127)/255;
+            dest[target+2]=(image[source]*alpha+dest[target+2]*(255-alpha)+127)/255;
+        }
+        return;
+    }
+#ifdef ENABLE_OPENGL
     static GLuint program = 0, texture = 0, vao = 0;
     if (!glIsProgram(program)) {
         const char* version =

@@ -168,6 +168,7 @@ void EmuWindow_LibRetro::SwapBuffers() {
             tracker->Render(width, height, data);
         }
 
+        LibRetro::RenderToolRing(width,height,data,pitch);
         LibRetro::UploadVideoFrame(data, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), pitch);
         if (did_malloc)

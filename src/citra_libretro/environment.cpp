@@ -59,35 +59,41 @@ namespace {
 bool tool_ring_open = false;
 bool tool_ring_capture = false;
 std::array<bool, 16> previous_tool_buttons{};
+std::array<bool,16> tool_release_block{};
 int tool_selected = 0;
 std::chrono::steady_clock::time_point tool_last_toggle{};
 std::string tool_last_message;
+std::chrono::steady_clock::time_point tool_diagnostic_until{};
 void PollToolRing() {
     std::array<bool, 16> buttons{};
     for (unsigned i=0;i<buttons.size();++i) buttons[i]=input_state_cb(0,RETRO_DEVICE_JOYPAD,0,i)>0;
+    for(unsigned i=0;i<buttons.size();++i)if(!buttons[i])tool_release_block[i]=false;
     const auto edge=[&](unsigned i){return buttons[i] && !previous_tool_buttons[i];};
     auto tools=LeafACNL::Tools();
     const auto now=std::chrono::steady_clock::now();
-    tool_ring_capture=tool_ring_open;
-    if (tools.empty()) tool_ring_open=false;
-    if (edge(RETRO_DEVICE_ID_JOYPAD_R2) && now-tool_last_toggle>std::chrono::milliseconds(200) && !tools.empty()) {
+    tool_ring_capture=tool_ring_open && !tools.empty();
+    if (tools.empty() && now>=tool_diagnostic_until) tool_ring_open=false;
+    if (edge(RETRO_DEVICE_ID_JOYPAD_R2) && now-tool_last_toggle>std::chrono::milliseconds(200) && !LeafACNL::ToolRingStatus().empty()) {
+        tool_release_block[RETRO_DEVICE_ID_JOYPAD_R2]=true;
         tool_last_toggle=now;
         tool_ring_open=!tool_ring_open;
-        tool_ring_capture=true;
+        tool_ring_capture=!tools.empty();
         tool_selected=0;
+        tool_diagnostic_until=now+std::chrono::seconds(4);
     }
     if (tool_ring_open) {
-        tool_ring_capture=true;
+        tool_ring_capture=!tools.empty();
         if (edge(RETRO_DEVICE_ID_JOYPAD_LEFT) || edge(RETRO_DEVICE_ID_JOYPAD_UP)) tool_selected=(tool_selected+7)%8;
         if (edge(RETRO_DEVICE_ID_JOYPAD_RIGHT) || edge(RETRO_DEVICE_ID_JOYPAD_DOWN)) tool_selected=(tool_selected+1)%8;
         const double x=input_state_cb(0,RETRO_DEVICE_ANALOG,RETRO_DEVICE_INDEX_ANALOG_LEFT,RETRO_DEVICE_ID_ANALOG_X)/32767.0;
         const double y=input_state_cb(0,RETRO_DEVICE_ANALOG,RETRO_DEVICE_INDEX_ANALOG_LEFT,RETRO_DEVICE_ID_ANALOG_Y)/32767.0;
         if (std::hypot(x,y)>=0.5) tool_selected=(static_cast<int>(std::lround((std::atan2(y,x)*180.0/3.141592653589793+90)/45))+8)%8;
         if (edge(RETRO_DEVICE_ID_JOYPAD_A) && static_cast<size_t>(tool_selected)<tools.size()) {
+            tool_release_block[RETRO_DEVICE_ID_JOYPAD_A]=true;
             LeafACNL::Select(tools[tool_selected].slot);
             tool_ring_open=false;
         }
-        if (edge(RETRO_DEVICE_ID_JOYPAD_B)) tool_ring_open=false;
+        if (edge(RETRO_DEVICE_ID_JOYPAD_B)) {tool_release_block[RETRO_DEVICE_ID_JOYPAD_B]=true;tool_ring_open=false;}
         if (tool_ring_open) {
             std::string message="Tool Ring: ";
             for (size_t i=0;i<tools.size();++i) {
@@ -286,6 +292,7 @@ retro_log_printf_t GetLoggingBackend() {
 }
 
 int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {
+    if(port==0 && device==RETRO_DEVICE_JOYPAD && id<tool_release_block.size() && tool_release_block[id])return 0;
     if (port == 0 && tool_ring_capture && (device == RETRO_DEVICE_JOYPAD || device == RETRO_DEVICE_ANALOG)) return 0;
     return input_state_cb(port, device, index, id);
 }

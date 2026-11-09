@@ -23,6 +23,8 @@ std::mutex mutex;
 std::unordered_map<u16, std::vector<u8>> icons;
 struct State {
     bool located = false;
+    bool supported = false;
+    std::string locate_error="TOOL HOOK NOT INITIALIZED";
     u32 entry = 0, original = 0, equip = 0, global = 0, pointer_offset = 0;
     u32 inventory_offset = 0, cave = 0;
     std::array<std::pair<u16, u16>, 32> ranges{};
@@ -121,10 +123,12 @@ bool Locate(Core::System& system, Kernel::Process& process) {
     if (id != 0x0004000000198000ULL && id != 0x0004000000086000ULL)
         return false;
     state = State{};
+    state.supported=true;
+    const auto fail=[&](const char* reason){state.locate_error=reason;return false;};
     auto& memory = system.Memory();
     const auto& segment = process.codeset->CodeSegment();
     if (segment.size < 0xc0 || segment.size > 0x2000000)
-        return false;
+        return fail("HOOK CODE SEGMENT INVALID");
     std::vector<u32> code(segment.size / 4);
     memory.ReadBlock(process, segment.addr, code.data(), code.size() * 4);
     auto word = [&](u32 a) -> u32 {
@@ -168,7 +172,7 @@ bool Locate(Core::System& system, Kernel::Process& process) {
                                    {0xe8bd4070, ~0u},
                                    {0xea000000, 0xff000000}});
     if (!inventory)
-        return false;
+        return fail("HOOK INVENTORY PATTERN MISSING");
     const auto equip_candidates = matches({{0xe92d4070, ~0u},
                                            {0xe1a04000, ~0u},
                                            {0xe1a05001, ~0u},
@@ -186,13 +190,13 @@ bool Locate(Core::System& system, Kernel::Process& process) {
             if ((instruction >> 24) == 0xea &&
                 candidate + offset + 8 + displacement == *inventory) {
                 if (equip)
-                    return false;
+                    return fail("HOOK EQUIPMENT PATTERN AMBIGUOUS");
                 equip = candidate;
             }
         }
     }
     if (!equip)
-        return false;
+        return fail("HOOK EQUIPMENT PATTERN MISSING");
     auto entry = unique({{0xe92d41f0, ~0u},
                          {0xe1a04000, ~0u},
                          {0xe2806c01, ~0u},
@@ -207,7 +211,7 @@ bool Locate(Core::System& system, Kernel::Process& process) {
     if (alternate)
         entry = alternate;
     if (!entry)
-        return false;
+        return fail("HOOK UPDATE PATTERN MISSING");
     const auto pointers = matches({{0xe59f0000, 0xfffff000},
                                    {0xe5900000, 0xfffff000},
                                    {0xe2800a06, ~0u},
@@ -215,7 +219,7 @@ bool Locate(Core::System& system, Kernel::Process& process) {
                                    {0xeb000000, 0xff000000},
                                    {0xe1b00fa0, ~0u}});
     if (pointers.empty())
-        return false;
+        return fail("HOOK INVENTORY POINTER MISSING");
     const auto literal = [&](u32 a) -> std::optional<u32> {
         const auto instruction = word(a);
         if ((instruction & 0x0f7f0000) != 0x051f0000)
@@ -230,15 +234,15 @@ bool Locate(Core::System& system, Kernel::Process& process) {
     const auto table_match = unique(
         {{0xe3500000, 0xffffff00}, {0x359f1000, 0xfffff000}, {0x30800080, ~0u}, {0x30810100, ~0u}});
     if (!global || !table_match)
-        return false;
+        return fail("HOOK ITEM TABLE MISSING");
     const u32 count = word(*table_match) & 0xff;
     const auto table = literal(*table_match + 4);
     const u32 cave = segment.addr + static_cast<u32>(code.size() * 4) - 0xc0;
     if (!table || count <= 21 || !Valid(memory, process, *table, std::min(count, 32u) * 12))
-        return false;
+        return fail("HOOK ITEM TABLE UNREADABLE");
     for (u32 a = cave; a < cave + 0x40; a += 4)
         if (word(a))
-            return false;
+            return fail("HOOK CODE CAVE OCCUPIED");
     state.entry = *entry;
     state.original = word(*entry);
     state.equip = equip;
@@ -279,6 +283,15 @@ bool Locate(Core::System& system, Kernel::Process& process) {
     LOG_INFO(Core, "Leaf ToolRing located: entry={:08X}, equipment={:08X}, cave={:08X}", *entry,
              equip, cave);
     return true;
+}
+std::string ToolRingStatus() {
+    std::lock_guard lock(mutex);
+    if(!state.supported)return {};
+    if(!state.located)return state.locate_error;
+    if(state.sampled==Clock::time_point{})return "WAITING FOR PLAYER HOOK";
+    if(!state.ready)return "TOOLS UNAVAILABLE STAND STILL";
+    if(Clock::now()-state.sampled>std::chrono::seconds(1))return "PLAYER HOOK SNAPSHOT EXPIRED";
+    return "NO ELIGIBLE TOOLS IN POCKETS";
 }
 std::vector<Tool> Tools() {
     std::lock_guard lock(mutex);
