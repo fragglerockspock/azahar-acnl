@@ -58,9 +58,11 @@ static_assert(sizeof(FileMetadata) == 0x20, "Size of FileMetadata is not correct
 LayeredFS::LayeredFS() = default;
 
 LayeredFS::LayeredFS(std::shared_ptr<RomFSReader> romfs_, std::string patch_path_,
-                     std::string patch_ext_path_, bool load_relocations_)
+                     std::string patch_ext_path_, bool load_relocations_,
+                     bool acnl_ui_patch_)
     : romfs(std::move(romfs_)), patch_path(std::move(patch_path_)),
-      patch_ext_path(std::move(patch_ext_path_)), load_relocations(load_relocations_) {
+      patch_ext_path(std::move(patch_ext_path_)), load_relocations(load_relocations_),
+      acnl_ui_patch(acnl_ui_patch_) {
     Load();
 }
 
@@ -78,7 +80,7 @@ void LayeredFS::Load() {
         LoadExtRelocations();
     }
 
-    if (Settings::acnl_widescreen_enabled.load()) {
+    if (acnl_ui_patch) {
         const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
                              static_cast<float>(Settings::acnl_camera_aspect_height.load());
         const float correction = (400.0f / 240.0f) / aspect;
