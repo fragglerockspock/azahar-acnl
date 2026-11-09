@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 #include "citra_libretro/environment.h"
 #include "common/settings.h"
 #include "core/leaf_acnl/tool_ring.h"
@@ -14,9 +15,9 @@
 #include "video_core/texture/texture_decode.h"
 
 namespace LibRetro {
-void RenderToolRing(int width, int height, void* framebuffer, size_t pitch) {
+ToolRingImage BuildToolRingImage(int width,int height) {
     if (!ToolRingVisible() || width <= 0 || height <= 0)
-        return;
+        return {};
     const auto tools = LeafACNL::Tools();
     const int h = 360, w = std::max(1, width * h / height);
     std::vector<u8> image(static_cast<size_t>(w) * h * 4);
@@ -119,6 +120,30 @@ void RenderToolRing(int width, int height, void* framebuffer, size_t pitch) {
                     pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,h/2+y*scale+sy,{255,255,255,255});
         }
     }
+    return {w,h,std::move(image)};
+}
+std::vector<ToolRingVertex> BuildToolRingVertices(int width,int height) {
+    const auto overlay=BuildToolRingImage(width,height);
+    std::vector<ToolRingVertex> vertices;
+    if(overlay.pixels.empty())return vertices;
+    const auto color=[&](int x,int y){const size_t p=(static_cast<size_t>(y)*overlay.width+x)*4;return static_cast<u32>(overlay.pixels[p])|(static_cast<u32>(overlay.pixels[p+1])<<8)|(static_cast<u32>(overlay.pixels[p+2])<<16)|(static_cast<u32>(overlay.pixels[p+3])<<24);};
+    for(int y=0;y<overlay.height;++y)for(int x=0;x<overlay.width;) {
+        const u32 rgba=color(x,y);
+        int end=x+1;while(end<overlay.width && color(end,y)==rgba)++end;
+        if(rgba>>24) {
+            const float left=2.0f*x/overlay.width-1.0f,right=2.0f*end/overlay.width-1.0f;
+            const float top=2.0f*y/overlay.height-1.0f,bottom=2.0f*(y+1)/overlay.height-1.0f;
+            vertices.insert(vertices.end(),{{left,top,rgba},{right,top,rgba},{right,bottom,rgba},{left,top,rgba},{right,bottom,rgba},{left,bottom,rgba}});
+        }
+        x=end;
+    }
+    return vertices;
+}
+void RenderToolRing(int width,int height,void* framebuffer,size_t pitch) {
+    const auto overlay=BuildToolRingImage(width,height);
+    if(overlay.pixels.empty())return;
+    const auto& image=overlay.pixels;
+    const int w=overlay.width,h=overlay.height;
     if (framebuffer) {
         if (pitch < static_cast<size_t>(width)*4) return;
         static bool announced=false;

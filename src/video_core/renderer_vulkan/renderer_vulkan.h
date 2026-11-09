@@ -114,6 +114,9 @@ private:
     void ApplySecondLayerOpacity(float alpha);
 
     void DrawCursor(const Layout::FramebufferLayout& layout);
+#ifdef HAVE_LIBRETRO
+    void DrawToolRing(const Layout::FramebufferLayout& layout);
+#endif
 
     void LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuffer, ScreenInfo& screen_info,
                             bool right_eye);
@@ -150,6 +153,11 @@ private:
     vk::ShaderModule cursor_vertex_shader{};
     vk::ShaderModule cursor_fragment_shader{};
     vk::Pipeline cursor_pipeline{};
+#ifdef HAVE_LIBRETRO
+    vk::Pipeline tool_ring_pipeline{};
+    vk::ShaderModule tool_ring_vertex_shader{},tool_ring_fragment_shader{};
+    std::unique_ptr<StreamBuffer> tool_ring_buffer;
+#endif
     vk::UniquePipelineLayout cursor_pipeline_layout{};
     bool isSecondaryWindow;
     bool secondaryWindowEnabled;

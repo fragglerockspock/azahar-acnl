@@ -22,6 +22,11 @@
 
 #include "video_core/host_shaders/vulkan_cursor_frag.h"
 #include "video_core/host_shaders/vulkan_cursor_vert.h"
+#ifdef HAVE_LIBRETRO
+#include "citra_libretro/environment.h"
+#include "video_core/host_shaders/vulkan_tool_ring_vert.h"
+#include "video_core/host_shaders/vulkan_tool_ring_frag.h"
+#endif
 
 #include <vk_mem_alloc.h>
 #if defined(__APPLE__) && !defined(HAVE_LIBRETRO)
@@ -129,6 +134,9 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
     CompileShaders();
     BuildLayouts();
     BuildPipelines();
+#ifdef HAVE_LIBRETRO
+    tool_ring_buffer=std::make_unique<StreamBuffer>(instance,scheduler,vk::BufferUsageFlagBits::eVertexBuffer,4*1024*1024);
+#endif
     if (secondary_window) {
         secondary_present_window_ptr = std::make_unique<PresentWindow>(
             *secondary_window, instance, scheduler, IsLowRefreshRate());
@@ -157,6 +165,11 @@ RendererVulkan::~RendererVulkan() {
     }
 
     device.destroyPipeline(cursor_pipeline);
+#ifdef HAVE_LIBRETRO
+    device.destroyPipeline(tool_ring_pipeline);
+    device.destroyShaderModule(tool_ring_vertex_shader);
+    device.destroyShaderModule(tool_ring_fragment_shader);
+#endif
     device.destroyShaderModule(cursor_vertex_shader);
     device.destroyShaderModule(cursor_fragment_shader);
 }
@@ -306,6 +319,10 @@ void RendererVulkan::CompileShaders() {
     present_shaders[2] = Compile(HostShaders::VULKAN_PRESENT_INTERLACED_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
 
+#ifdef HAVE_LIBRETRO
+    tool_ring_vertex_shader=Compile(HostShaders::VULKAN_TOOL_RING_VERT,vk::ShaderStageFlagBits::eVertex,device);
+    tool_ring_fragment_shader=Compile(HostShaders::VULKAN_TOOL_RING_FRAG,vk::ShaderStageFlagBits::eFragment,device);
+#endif
     cursor_vertex_shader =
         Compile(HostShaders::VULKAN_CURSOR_VERT, vk::ShaderStageFlagBits::eVertex, device);
     cursor_fragment_shader =
@@ -603,6 +620,25 @@ void RendererVulkan::BuildPipelines() {
             instance.GetDevice().createGraphicsPipeline({}, cursor_pipeline_info);
         ASSERT_MSG(result == vk::Result::eSuccess, "Unable to build cursor pipeline");
         cursor_pipeline = pipeline;
+#ifdef HAVE_LIBRETRO
+        const vk::VertexInputBindingDescription ring_binding{0,sizeof(LibRetro::ToolRingVertex),vk::VertexInputRate::eVertex};
+        const std::array ring_attributes={vk::VertexInputAttributeDescription{0,0,vk::Format::eR32G32Sfloat,0},vk::VertexInputAttributeDescription{1,0,vk::Format::eR8G8B8A8Unorm,8}};
+        const vk::PipelineVertexInputStateCreateInfo ring_vertex_input{.vertexBindingDescriptionCount=1,.pVertexBindingDescriptions=&ring_binding,.vertexAttributeDescriptionCount=static_cast<u32>(ring_attributes.size()),.pVertexAttributeDescriptions=ring_attributes.data()};
+        auto ring_blend=cursor_blend_attachment;
+        ring_blend.srcColorBlendFactor=vk::BlendFactor::eSrcAlpha;
+        ring_blend.dstColorBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+        ring_blend.dstAlphaBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+        auto ring_color_blending=cursor_color_blending;
+        ring_color_blending.pAttachments=&ring_blend;
+        const std::array ring_shaders={vk::PipelineShaderStageCreateInfo{.stage=vk::ShaderStageFlagBits::eVertex,.module=tool_ring_vertex_shader,.pName="main"},vk::PipelineShaderStageCreateInfo{.stage=vk::ShaderStageFlagBits::eFragment,.module=tool_ring_fragment_shader,.pName="main"}};
+        auto ring_info=cursor_pipeline_info;
+        ring_info.pStages=ring_shaders.data();
+        ring_info.pVertexInputState=&ring_vertex_input;
+        ring_info.pColorBlendState=&ring_color_blending;
+        const auto [ring_result,ring_pipeline]=instance.GetDevice().createGraphicsPipeline({},ring_info);
+        ASSERT_MSG(ring_result==vk::Result::eSuccess,"Unable to build tool ring pipeline");
+        tool_ring_pipeline=ring_pipeline;
+#endif
     }
 }
 
@@ -1058,11 +1094,32 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
         }
     }
 
+#ifdef HAVE_LIBRETRO
+    DrawToolRing(layout);
+#endif
     DrawCursor(layout);
 
     scheduler.Record([](vk::CommandBuffer cmdbuf) { cmdbuf.endRenderPass(); });
 }
 
+#ifdef HAVE_LIBRETRO
+void RendererVulkan::DrawToolRing(const Layout::FramebufferLayout& layout) {
+    const auto vertices=LibRetro::BuildToolRingVertices(layout.width,layout.height);
+    if(vertices.empty())return;
+    const u32 size=static_cast<u32>(vertices.size()*sizeof(LibRetro::ToolRingVertex));
+    if(size>4*1024*1024)return;
+    auto [data,offset,invalidate]=tool_ring_buffer->Map(size,16);
+    std::memcpy(data,vertices.data(),size);
+    tool_ring_buffer->Commit(size);
+    static bool announced=false;
+    if(!announced){LOG_INFO(Render_Vulkan,"Leaf ToolRing Vulkan overlay active");announced=true;}
+    scheduler.Record([this,offset,count=static_cast<u32>(vertices.size()),pipeline=tool_ring_pipeline](vk::CommandBuffer cmdbuf){
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline);
+        cmdbuf.bindVertexBuffers(0,tool_ring_buffer->Handle(),{offset});
+        cmdbuf.draw(count,1,0,0);
+    });
+}
+#endif
 void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
     const auto cursor = render_window.GetCursorInfo();
     if (!cursor.visible) {
