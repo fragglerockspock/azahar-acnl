@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2023-2025 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -19,6 +20,8 @@ RendererSoftware::~RendererSoftware() = default;
 
 void RendererSoftware::SwapBuffers() {
     system.perf_stats->StartSwap();
+    const auto& leaf_bottom = pica.regs.framebuffer_config[1];
+    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2);
     PrepareRenderTarget();
     system.perf_stats->EndSwap();
     EndFrame();

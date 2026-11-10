@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 #include "core/leaf_acnl/tool_ring.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
@@ -648,6 +649,7 @@ void retro_reset() {
 bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
     LeafACNL::ResetToolRing();
+    LeafACNL::ResetUi();
     acnl_single_screen = false;
     acnl_camera_addresses.clear();
     Settings::acnl_widescreen_enabled.store(false);

@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2023-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -557,6 +558,8 @@ void GPU::MemoryTransfer() {
             DelayGenerator::GetCopyMode(config.IsInputVRAM(), config.IsOutputVRAM()), true,
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
+
+    LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress());
 
     // Complete transfer.
     config.trigger.Assign(0);

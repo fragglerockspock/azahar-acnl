@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2023-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -1095,6 +1096,7 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
     }
 
 #ifdef HAVE_LIBRETRO
+    DrawLeafUi(layout);
     DrawToolRing(layout);
 #endif
     DrawCursor(layout);
@@ -1103,6 +1105,43 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
 }
 
 #ifdef HAVE_LIBRETRO
+void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
+    const auto regions = LeafACNL::UiRegions(static_cast<float>(layout.width),static_cast<float>(layout.height));
+    static bool announced = false;
+    if (!regions.empty() && !announced) { LOG_INFO(Render_Vulkan,"Leaf UI Vulkan composition active"); announced = true; }
+    for (const auto& region : regions) {
+        if (region.shade>0) {
+            const u32 rgba = static_cast<u32>(region.shade*255)<<24;
+            const std::array<LibRetro::ToolRingVertex,6> vertices{{
+                {-1,-1,rgba},{1,-1,rgba},{-1,1,rgba},
+                {-1,1,rgba},{1,-1,rgba},{1,1,rgba}}};
+            auto [data,offset,invalidate] = tool_ring_buffer->Map(sizeof(vertices),16);
+            std::memcpy(data,vertices.data(),sizeof(vertices));
+            tool_ring_buffer->Commit(sizeof(vertices));
+            scheduler.Record([this,offset,pipeline=tool_ring_pipeline](vk::CommandBuffer cmdbuf) {
+                cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline);
+                cmdbuf.bindVertexBuffers(0,tool_ring_buffer->Handle(),{offset});
+                cmdbuf.draw(6,1,0,0);
+            });
+        }
+        scheduler.Record([this,index=current_pipeline](vk::CommandBuffer cmdbuf) {
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,present_pipelines[index]);
+        });
+        const auto original = screen_infos[2].texcoords;
+        auto& tex = screen_infos[2].texcoords;
+        const float tw = original.right-original.left;
+        const float th = original.bottom-original.top;
+        tex.left = original.left+tw*region.source.left/320;
+        tex.right = original.left+tw*region.source.right/320;
+        tex.top = original.bottom-th*region.source.bottom/240;
+        tex.bottom = original.bottom-th*region.source.top/240;
+        const auto& dst = region.destination;
+        DrawSingleScreen(2,dst.left,dst.top,dst.right-dst.left,dst.bottom-dst.top,
+                         Layout::DisplayOrientation::Landscape);
+        tex = original;
+    }
+}
+
 void RendererVulkan::DrawToolRing(const Layout::FramebufferLayout& layout) {
     const auto vertices=LibRetro::BuildToolRingVertices(layout.width,layout.height);
     if(vertices.empty())return;
@@ -1201,6 +1240,8 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
+    const auto& leaf_bottom = pica.regs.framebuffer_config[1];
+    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2);
     PrepareRendertarget();
     RenderScreenshot();
     isSecondaryWindow = false;

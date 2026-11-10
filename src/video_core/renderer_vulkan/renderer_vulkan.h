@@ -115,6 +115,7 @@ private:
 
     void DrawCursor(const Layout::FramebufferLayout& layout);
 #ifdef HAVE_LIBRETRO
+    void DrawLeafUi(const Layout::FramebufferLayout& layout);
     void DrawToolRing(const Layout::FramebufferLayout& layout);
 #endif
 

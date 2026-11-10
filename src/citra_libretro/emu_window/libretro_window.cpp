@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -168,6 +169,8 @@ void EmuWindow_LibRetro::SwapBuffers() {
             tracker->Render(width, height, data);
         }
 
+        const auto& bottom = renderer.Screen(VideoCore::ScreenId::Bottom);
+        LeafACNL::CompositeUi(data,pitch,width,height,bottom.pixels.data(),bottom.pixels.size(),bottom.height);
         LibRetro::RenderToolRing(width,height,data,pitch);
         LibRetro::UploadVideoFrame(data, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), pitch);

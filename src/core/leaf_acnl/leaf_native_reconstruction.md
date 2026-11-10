@@ -72,3 +72,24 @@ The visibility correction also covers Vulkan/MoltenVK rather than assuming which
 Device testing confirmed the ring is visible but the icons were absent. The LayeredFS path filter compared a 27-character suffix to the 28-character string `Layout/ItemWin/item_icon.arc`, so SetToolIconArchive was never called. The filter now uses IsToolIconArchivePath and derives the comparison length from the string itself. Ring control, equipment hooks, camera expansion, and UI scaling are unchanged.
 
 The host regression checks the actual archive path, rejects nearby incorrect names, sends a synthetic BCLIM archive through the path predicate and production archive reader, and asserts that the sampled icon color reaches the visible software framebuffer. Texture sampling remains stubbed for that integration test. An optional LEAF_TOOL_ICON_ARCHIVE path additionally checks all 19 distinct supported tool-icon IDs against the supplied game archive without embedding game graphics in the repository.
+
+
+## Bottom-screen scene port, first pass (2026-11-10)
+
+Native evidence was recovered from the supplied APK's arm64 libcitra-android.so. The anonymous BuildScenes function at 0x20C4E50 was executed in an isolated AArch64 emulator with allocator/string imports stubbed. Its returned vector has fourteen SceneConfig records of 0x120 bytes. These are configuration records, distinct from Ui::Initialize's runtime scene records of 0x270 bytes. Ui::FrameRegions is at 0x20CBCD4. UiProbe::TextureKey at 0x20BFBF8 hashes the raw texture payload with XXH3_64bits and XORs width<<48 and height<<32. UiPatcher::BuildTextureKeys (0x20BC4A4) resolves BCLIM assets using archive-relative names; no Android screenshot recognition is involved.
+
+Recovered scenes relevant to this pass:
+
+| Scene | Priority | Visible texture rule | Placement |
+| --- | ---: | --- | --- |
+| choice | 5 | selWin/slct_win.arc: | choice_bubble, bottom right, 0.8 height, bounds padding 3 |
+| choice_map | 6 | choice plus Menu/map_*; excludes my_men_btn_00 | bottom center, 0.52 height |
+| map_show | 2 | map_village/island/lobby/exb; excludes menu_tab | bottom center, 0.5 height |
+| tab_screen | 0 | Menu/menu_tab.arc: | centered 320x240, fit height, backdrop 0.45 |
+| town_hud | 1 | menu_tab plus my_men_btn_00 | hud_map bottom right, 0.42 height, (-4,-4) offset, source y>=26 |
+
+The new ui.cpp ports those texture-key rules and a first subset of their region presentation. RegisterUiArchive reads matching BCLIM payloads from the user's RomFS. PicaCore probes texture0 before accelerated DrawArrays can return, runs Leaf's small-batch vertex-shader bounds calculation, and records bounds against the guest render target. GPU display transfers propagate that visibility to LCD buffers. FinishUiFrame selects the displayed bottom buffer, including double buffering. The software libretro presenter and Vulkan presenter composite supported bottom regions before ToolRing. Native X/D-pad/A/B/L/R input remains unchanged; this pass adds no emulated cursor or invented dialogue prompt.
+
+This is not the full Leaf single-screen port. Layout grafts, magenta-key texture patches/transparency, fades, touch-region remapping, Android expand/collapse controls, map_pick's separate buttons, keyboard, board, CAT tasks, coupons, letters, lighting, and other scene-specific regions remain unported. map_pick currently follows the ordinary map presentation and retains its original bottom framebuffer contents. Dialogue without a choice texture does not activate a new overlay; a universal A-button hint remains unestablished. Crop/placement and menu navigation still require actual iPhone tests. Existing widescreen and RootPane scaling were retained.
+
+Verification: tools/test_leaf_ui.py compiles production archive parsing, XXH3 hashing, scene routing, transfer tracking and software composition with warnings treated as errors. It checks double-buffer switches, unchanged LCD frames, clearing stale scenes after untextured draws, dialogue bounds unions/padding, map and menu priorities, channel conversion and row padding. LEAF_MENU_TAB_ARCHIVE can test the actual supplied menu_tab.arc without committing game data. tools/test_leaf_tool_ring.py remains the ToolRing regression check. Host tests do not establish GPU driver or gameplay correctness.

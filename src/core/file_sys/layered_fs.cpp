@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2020-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -83,9 +84,12 @@ void LayeredFS::Load() {
 
     if (acnl_ui_patch) {
         for (const auto& [path,file] : file_path_map) {
-            if (!LeafACNL::IsToolIconArchivePath(path) || file->relocation.size>4*1024*1024) continue;
+            if ((!LeafACNL::IsToolIconArchivePath(path) && !LeafACNL::IsUiArchivePath(path)) || file->relocation.size>4*1024*1024) continue;
             std::vector<u8> bytes(file->relocation.size);
-            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) LeafACNL::SetToolIconArchive(bytes);
+            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) {
+                if (LeafACNL::IsToolIconArchivePath(path)) LeafACNL::SetToolIconArchive(bytes);
+                else LeafACNL::RegisterUiArchive(path,bytes);
+            }
         }
         const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
                              static_cast<float>(Settings::acnl_camera_aspect_height.load());
