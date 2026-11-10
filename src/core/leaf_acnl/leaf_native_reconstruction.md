@@ -65,3 +65,10 @@ The regression harness now compiles the actual software overlay without `ENABLE_
 
 
 The visibility correction also covers Vulkan/MoltenVK rather than assuming which renderer Manic chooses. The same CPU RGBA overlay becomes run-length colored triangle quads; a dedicated alpha-blended Vulkan pipeline draws those vertices in DrawScreens before the presentation render pass ends. Icons, disc positions, and diagnostic text therefore use the same rasterization on both software and Vulkan. The host test reconstructs the complete RGBA overlay from the generated triangle mesh and asserts exact pixel equality, buffer bounds, packed RGBA vertex colors, and a mesh size below the dedicated four-MiB stream buffer limit. This validates mesh generation, not Vulkan driver behavior on an iPhone.
+
+
+## Missing icon correction
+
+Device testing confirmed the ring is visible but the icons were absent. The LayeredFS path filter compared a 27-character suffix to the 28-character string `Layout/ItemWin/item_icon.arc`, so SetToolIconArchive was never called. The filter now uses IsToolIconArchivePath and derives the comparison length from the string itself. Ring control, equipment hooks, camera expansion, and UI scaling are unchanged.
+
+The host regression checks the actual archive path, rejects nearby incorrect names, sends a synthetic BCLIM archive through the path predicate and production archive reader, and asserts that the sampled icon color reaches the visible software framebuffer. Texture sampling remains stubbed for that integration test. An optional LEAF_TOOL_ICON_ARCHIVE path additionally checks all 19 distinct supported tool-icon IDs against the supplied game archive without embedding game graphics in the repository.

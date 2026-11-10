@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <string_view>
 #include "common/common_types.h"
 
 namespace Core {
@@ -23,6 +24,10 @@ std::vector<Tool> Tools();
 bool Select(int slot);
 std::string ToolRingStatus();
 void ResetToolRing();
+inline bool IsToolIconArchivePath(std::string_view path) {
+    constexpr std::string_view suffix="Layout/ItemWin/item_icon.arc";
+    return path.size()>=suffix.size() && path.substr(path.size()-suffix.size())==suffix;
+}
 void SetToolIconArchive(const std::vector<u8>& bytes);
 std::vector<u8> ToolIcon(u16 icon);
 }

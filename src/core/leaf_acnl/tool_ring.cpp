@@ -111,6 +111,7 @@ void SetToolIconArchive(const std::vector<u8>& bytes) {
             continue;
         icons[id] = std::vector<u8>(bytes.begin() + offset, bytes.begin() + offset + size);
     }
+    LOG_INFO(Core,"Leaf ToolRing icon archive loaded: {} icons",icons.size());
 }
 std::vector<u8> ToolIcon(u16 icon) {
     std::lock_guard lock(mutex);
