@@ -170,7 +170,8 @@ void EmuWindow_LibRetro::SwapBuffers() {
         }
 
         const auto& bottom = renderer.Screen(VideoCore::ScreenId::Bottom);
-        LeafACNL::CompositeUi(data,pitch,width,height,bottom.pixels.data(),bottom.pixels.size(),bottom.height);
+        if (layout.top_screen_enabled && !layout.bottom_screen_enabled)
+            LeafACNL::CompositeUi(data,pitch,width,height,bottom.pixels.data(),bottom.pixels.size(),bottom.height);
         LibRetro::RenderToolRing(width,height,data,pitch);
         LibRetro::UploadVideoFrame(data, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), pitch);
@@ -209,6 +210,22 @@ void EmuWindow_LibRetro::PollEvents() {
     }
 
     LibRetro::PollInput();
+
+    if (LeafACNL::UiEnabled() && !GetFramebufferLayout().bottom_screen_enabled) {
+        const bool pressed = LibRetro::settings.enable_touch_touchscreen && !LibRetro::ToolRingVisible() &&
+            LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_PRESSED);
+        float tx=0,ty=0;
+        const float x = (LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_X)+32767)/65534.0f*width;
+        const float y = (LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_Y)+32767)/65534.0f*height;
+        if (pressed && LeafACNL::UiTouch(x,y,width,height,tx,ty)) {
+            TouchNormalized(tx,ty);
+            hasTouched = true;
+        } else if (hasTouched) {
+            TouchReleased();
+            hasTouched = false;
+        }
+        return;
+    }
 
     // TODO: Poll for right click for motion emu
 

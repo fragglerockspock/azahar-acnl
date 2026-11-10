@@ -13,7 +13,9 @@ def put(name, content):
 
 put("common/logging/log.h", "#pragma once\n#define LOG_INFO(...) (void)0\n")
 put("test.cpp", r'''
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -41,6 +43,21 @@ u32 Register(const std::string& path,const std::string& name,u8 seed) {
 }
 int main(int argc,char** argv) {
     using namespace LeafACNL;
+    const auto check_rect=[](UiRect got,UiRect expected){
+        assert(got.left==expected.left && got.top==expected.top && got.right==expected.right && got.bottom==expected.bottom);
+    };
+    check_rect(UiLandscapeBounds({100,20,150,80}),{240,90,300,140});
+    check_rect(Region({40,1,280,216},522,240,.965f,.54f,1,1,.8f).destination,{312,0,504,130});
+    check_rect(Region({63,17,258,201},522,240,.97f,.03f,.5f,0,.5f,-64,0).destination,{394,7,491,99});
+    check_rect(Region({196,204,320,240},522,240,.97f,.03f,1,0,.5f,0,96).destination,{444,103,506,121});
+    check_rect(Region({0,204,124,240},522,240,.97f,.03f,1,0,.5f,-66,96).destination,{378,103,440,121});
+    check_rect(Region({0,0,320,224},522,240,.5f,.485f,.5f,1,.5f).destination,{181,4,341,116});
+    check_rect(Region({0,1,320,240},522,240,.5f,.5f,.5f,.5f,1,0,0,true).destination,{100,0,422,240});
+    check_rect(Region({0,0,210,25},522,240,0,0,0,0,1,4,0).destination,{4,0,214,25});
+    check_rect(Region({64,26,280,214},522,240,1,1,1,1,.42f,-4,-4).destination,{427,157,518,236});
+    std::array<u8,64> native_key_fixture{};
+    for(size_t i=0;i<native_key_fixture.size();++i)native_key_fixture[i]=i;
+    assert(Key(native_key_fixture.data(),64,8,8)==0x618feb9889b0ed55ULL);
     ResetUi();
     assert(!UiEnabled());
     assert(!IsUiArchivePath("Layout/ItemWin/item_icon.arc"));
@@ -59,7 +76,11 @@ int main(int argc,char** argv) {
     FinishUiFrame(200);
     auto regions=UiRegions(522,240);
     assert(regions.size()==1 && regions[0].shade==.45f);
-    assert(regions[0].destination.left==101 && regions[0].destination.right==421);
+    assert(regions[0].destination.left==100 && regions[0].destination.right==422);
+    float tx=0,ty=0;
+    assert(UiTouch(261,120,522,240,tx,ty));
+    assert(std::abs(tx-.5f)<.0001f && std::abs(ty-120.5f/240)<.0001f);
+    assert(!UiTouch(0,120,522,240,tx,ty));
     const size_t pitch=522*4+16;
     std::vector<u8> output(pitch*240,200), bottom(320*240*4);
     for(size_t i=0;i<bottom.size();i+=4){bottom[i]=10;bottom[i+1]=20;bottom[i+2]=30;bottom[i+3]=255;}
@@ -67,25 +88,25 @@ int main(int argc,char** argv) {
     assert(output[0]==110 && output[3]==200);
     assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==0);
     assert(output[522*4]==200);
-    FinishUiFrame(200);
+    for(int frame=0;frame<180;++frame) FinishUiFrame(200);
     assert(UiRegions(522,240).size()==1);
     UiDraw(100,hud);
     UiTransfer(100,201);
     FinishUiFrame(201);
-    assert(UiRegions(522,240).empty());
+    assert(UiRegions(522,240).size()==1);
     UiDraw(100,hud|map,{20,26,300,230});
     UiTransfer(100,200);
     FinishUiFrame(200);
     regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].source.top==26);
-    assert(regions[0].destination.right<522 && regions[0].destination.bottom<240);
+    assert(regions.size()==2 && regions[1].source.top==26);
+    assert(regions[1].destination.right<522 && regions[1].destination.bottom<240);
     UiDraw(100,choice,{100,110,300,210});
     UiDraw(100,choice,{105,105,280,230});
     UiTransfer(100,201);
     FinishUiFrame(201);
     regions=UiRegions(522,240);
     assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==102 && regions[0].source.bottom==233);
-    assert(regions[0].destination.right==522 && regions[0].destination.bottom==240);
+    assert(regions[0].destination.right==504 && regions[0].destination.bottom==130);
     UiDraw(100,0);
     UiTransfer(100,200);
     FinishUiFrame(200);
@@ -94,12 +115,21 @@ int main(int argc,char** argv) {
     UiTransfer(100,201);
     FinishUiFrame(201);
     regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].destination.bottom==240 && regions[0].destination.top==120);
+    assert(regions.size()==1 && regions[0].destination.bottom==116 && regions[0].destination.top==4);
     UiDraw(100,choice|map);
     UiTransfer(100,200);
     FinishUiFrame(200);
     regions=UiRegions(522,240);
     assert(regions.size()==1 && regions[0].source.right==320);
+    UiDraw(100,map|16);
+    UiTransfer(100,200);
+    FinishUiFrame(200);
+    regions=UiRegions(522,240);
+    assert(regions.size()==3);
+    const auto& button=regions[1];
+    assert(UiTouch((button.destination.left+button.destination.right)/2,
+                   (button.destination.top+button.destination.bottom)/2,522,240,tx,ty));
+    assert(std::abs(tx-258.0f/320)<.0001f && std::abs(ty-222.0f/240)<.0001f);
     UiTransfer(999,200);
     FinishUiFrame(200);
     assert(UiRegions(522,240).empty());

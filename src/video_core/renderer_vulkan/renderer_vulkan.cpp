@@ -1106,6 +1106,7 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
 
 #ifdef HAVE_LIBRETRO
 void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
+    if (!layout.top_screen_enabled || layout.bottom_screen_enabled) return;
     const auto regions = LeafACNL::UiRegions(static_cast<float>(layout.width),static_cast<float>(layout.height));
     static bool announced = false;
     if (!regions.empty() && !announced) { LOG_INFO(Render_Vulkan,"Leaf UI Vulkan composition active"); announced = true; }

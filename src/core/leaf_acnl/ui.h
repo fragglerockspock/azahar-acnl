@@ -15,6 +15,7 @@ struct UiRegion {
     UiRect destination;
     float shade = 0;
 };
+UiRect UiLandscapeBounds(UiRect raw);
 void ResetUi();
 bool IsUiArchivePath(std::string_view path);
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
@@ -24,6 +25,7 @@ void UiDraw(u32 target, u32 tags, UiRect bounds = {});
 void UiTransfer(u32 source, u32 destination);
 void FinishUiFrame(u32 bottom);
 std::vector<UiRegion> UiRegions(float width, float height);
+bool UiTouch(float x, float y, float width, float height, float& touch_x, float& touch_y);
 void CompositeUi(u8* output, size_t pitch, u32 width, u32 height,
                  const u8* bottom, size_t bottom_size, u32 bottom_stride);
 }

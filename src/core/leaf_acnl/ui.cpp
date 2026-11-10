@@ -57,21 +57,24 @@ UiRect Crop(UiRect rect, float padding) {
             std::clamp(rect.right+padding,0.0f,320.0f),
             std::clamp(rect.bottom+padding,0.0f,240.0f)};
 }
-UiRegion Region(UiRect source, float width, float height, float ax, float ay,
-                float scale, float ox = 0, float oy = 0) {
-    float h = height * scale;
-    float w = h * (source.right-source.left) / (source.bottom-source.top);
-    const float fit = std::min({1.0f,width/w,height/h});
-    w *= fit;
-    h *= fit;
-    const float x = (width-w)*ax + ox*height/240.0f;
-    const float y = (height-h)*ay + oy*height/240.0f;
-    return {source,{x,y,x+w,y+h},0};
+UiRegion Region(UiRect source, float width, float height, float tx, float ty,
+                float ax, float ay, float scale, float ox = 0, float oy = 0, bool fit = false) {
+    const float sw = source.right-source.left, sh = source.bottom-source.top;
+    const float factor = fit ? std::min(width/sw,height/sh) : height/240*scale;
+    const float w = sw*factor, h = sh*factor;
+    const float x = width*tx-w*ax+ox*height/240;
+    const float y = height*ty-h*ay+oy*height/240;
+    return {source,{std::max(0.0f,std::round(x)),std::max(0.0f,std::round(y)),
+                    std::max(0.0f,std::round(x+w)),std::max(0.0f,std::round(y+h))},0};
 }
 }
 bool UiRect::Valid() const {
     return std::isfinite(left) && std::isfinite(top) && std::isfinite(right) &&
            std::isfinite(bottom) && right > left && bottom > top;
+}
+UiRect UiLandscapeBounds(UiRect raw) {
+    if (!raw.Valid()) return {};
+    return {320-raw.bottom,240-raw.right,320-raw.top,240-raw.left};
 }
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
@@ -165,7 +168,7 @@ void FinishUiFrame(u32 bottom) {
     if (previous != displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
     ++epoch;
     for (auto p=targets.begin();p!=targets.end();) {
-        if (p->second.epoch+120<epoch) p=targets.erase(p);
+        if (p->first!=bottom && p->second.epoch+120<epoch) p=targets.erase(p);
         else ++p;
     }
 }
@@ -175,23 +178,45 @@ std::vector<UiRegion> UiRegions(float width, float height) {
     const u32 tags = displayed.tags;
     if (tags&Choice) {
         if ((tags&Map) && !(tags&HudButton))
-            return {Region({0,0,320,240},width,height,.5f,1,.52f)};
-        return {Region(Crop(displayed.choice,3),width,height,1,1,.8f)};
+            return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.52f)};
+        const auto source = displayed.choice.Valid() ? Crop(displayed.choice,3) : UiRect{40,1,280,216};
+        return {Region(source,width,height,.965f,.54f,1,1,.8f)};
     }
+    if ((tags&Map) && (tags&MapControl))
+        return {Region({63,17,258,201},width,height,.97f,.03f,.5f,0,.5f,-64,0),
+                Region({196,204,320,240},width,height,.97f,.03f,1,0,.5f,0,96),
+                Region({0,204,124,240},width,height,.97f,.03f,1,0,.5f,-66,96)};
     if ((tags&Map) && !(tags&Tab))
-        return {Region({0,0,320,240},width,height,.5f,1,.5f)};
+        return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.5f)};
     if ((tags&Tab) && !(tags&HudButton)) {
-        auto region = Region({0,0,320,240},width,height,.5f,.5f,1);
+        auto region = Region({0,1,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
         region.shade = .45f;
         return {region};
     }
-    if ((tags&Tab) && (tags&HudButton) && (tags&HudMap)) {
-        auto source = Crop(displayed.map,2);
-        source.top = std::max(26.0f,source.top);
-        if (source.Valid()) return {Region(source,width,height,1,1,.42f,-4,-4)};
+    if ((tags&Tab) && (tags&HudButton)) {
+        std::vector<UiRegion> regions{Region({0,0,210,25},width,height,0,0,0,0,1,4,0)};
+        if (tags&HudMap) {
+            auto source = displayed.map.Valid() ? Crop(displayed.map,1) : UiRect{64,26,280,214};
+            source.top = std::max(26.0f,source.top);
+            if (source.Valid()) regions.push_back(Region(source,width,height,1,1,1,1,.42f,-4,-4));
+        }
+        return regions;
     }
     return {};
 }
+bool UiTouch(float x, float y, float width, float height, float& touch_x, float& touch_y) {
+    if (!std::isfinite(x) || !std::isfinite(y)) return false;
+    const auto regions = UiRegions(width,height);
+    for (auto p=regions.rbegin();p!=regions.rend();++p) {
+        const auto& d = p->destination;
+        if (x<d.left || x>=d.right || y<d.top || y>=d.bottom) continue;
+        touch_x = (p->source.left+(x-d.left)/(d.right-d.left)*(p->source.right-p->source.left))/320;
+        touch_y = (p->source.top+(y-d.top)/(d.bottom-d.top)*(p->source.bottom-p->source.top))/240;
+        return true;
+    }
+    return false;
+}
+
 void CompositeUi(u8* output, size_t pitch, u32 width, u32 height,
                  const u8* bottom, size_t bottom_size, u32 bottom_stride) {
     if (!output || !bottom || bottom_stride<320 || pitch<size_t{width}*4 ||
