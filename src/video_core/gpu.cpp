@@ -560,11 +560,14 @@ void GPU::MemoryTransfer() {
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
 
-    if (!config.is_texture_copy && config.output_width==240 && config.output_height==320) {
+    const auto& leaf_bottom=regs.framebuffer_config[1];
+    if (!config.is_texture_copy && LeafACNL::IsUiBottomTransfer(
+            config.output_width,config.output_height,static_cast<u32>(config.scaling.Value()),
+            config.GetPhysicalOutputAddress(),leaf_bottom.address_left1,leaf_bottom.address_left2)) {
         const auto source=config.GetPhysicalInputAddress();
         const size_t size=size_t{config.input_width.Value()}*config.input_height.Value()*BytesPerPixel(config.input_format);
         LeafACNL::UiRememberBottom(source,size,static_cast<u32>(config.input_format.Value()));
-        LeafACNL::UiTransfer(source,config.GetPhysicalOutputAddress(),config.output_width,config.output_height);
+        LeafACNL::UiTransfer(source,config.GetPhysicalOutputAddress());
         Pica::MemoryFillConfig clear{};
         clear.address_start=source/8;
         clear.address_end=(source+static_cast<u32>(size))/8;

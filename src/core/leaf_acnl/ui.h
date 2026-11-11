@@ -28,6 +28,8 @@ void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
 bool UiEnabled();
 u32 UiTexture(const u8* data, size_t size, u32 width, u32 height);
 void UiDraw(u32 target, u32 tags, UiRect bounds = {});
+bool IsUiBottomTransfer(u32 width, u32 height, u32 scaling, u32 destination,
+                        u32 bottom_first, u32 bottom_second);
 void UiTransfer(u32 source, u32 destination, u32 width = 240, u32 height = 320);
 void UiRememberBottom(u32 source, size_t size, u32 format);
 bool UiKeyFill(u32 start, u32 end, u32& value, u32& control);

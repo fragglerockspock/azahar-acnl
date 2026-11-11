@@ -61,6 +61,17 @@ int main(int argc,char** argv) {
     const std::array<size_t,14> expected_sizes{256,192,128,128,128,128,128,64,64,64,32,32,32,64};
     for(u32 format=0;format<14;++format) assert(UiTextureSize(format,8,8)==expected_sizes[format]);
     assert(UiTextureSize(14,8,8)==0 && UiTextureSize(12,0,8)==0);
+    assert(IsUiBottomTransfer(240,320,0,200,0,0));
+    assert(IsUiBottomTransfer(480,320,1,200,0,0));
+    assert(IsUiBottomTransfer(480,640,2,200,0,0));
+    assert(IsUiBottomTransfer(256,320,0,200,200,201));
+    assert(IsUiBottomTransfer(256,320,0,201,200,201));
+    assert(!IsUiBottomTransfer(240,400,0,300,200,201));
+    assert(!IsUiBottomTransfer(480,800,2,300,200,201));
+    assert(!IsUiBottomTransfer(256,320,0,300,200,201));
+    assert(!IsUiBottomTransfer(0,320,0,200,200,201));
+    assert(!IsUiBottomTransfer(240,320,3,200,200,201));
+    assert(!IsUiBottomTransfer(240,320,0,0,0,0));
     ResetUi();
     assert(!UiEnabled());
     assert(!IsUiArchivePath("Layout/ItemWin/item_icon.arc"));
@@ -179,7 +190,7 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).empty());
     assert(Tags("selWin/slct_win.arc:im_cmn_arrow32_00.bclim")==0);
     assert(Tags("selWin/slct_win.arc:im_cmn_crl_W10_00.bclim")==0);
-    assert(UiStatus().find("UI FIX 4 REG ")==0);
+    assert(UiStatus().find("UI FIX 5 REG ")==0);
     SetUiGpuReady(true);assert(UiStatus().find("GPU OK")!=std::string::npos);
     SetUiGpuReady(false);assert(UiStatus().find("GPU OFF")!=std::string::npos);
     const auto transparent=UiKeyPixel(1,0,1);

@@ -91,7 +91,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 void SetUiGpuReady(bool ready) { gpu_ready=ready ? 1 : 0; }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 4 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 5 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" GPU "+
            (gpu_ready.load()<0 ? "NA" : (gpu_ready.load() ? "OK" : "OFF"));
@@ -202,6 +202,15 @@ bool UiKeyFill(u32 start, u32 end, u32& value, u32& control) {
         return true;
     }
     return false;
+}
+bool IsUiBottomTransfer(u32 width, u32 height, u32 scaling, u32 destination,
+                        u32 bottom_first, u32 bottom_second) {
+    if (!width || !height || scaling>2 || !destination) return false;
+    if ((bottom_first && destination==bottom_first) ||
+        (bottom_second && destination==bottom_second)) return true;
+    const u32 output_width=scaling ? width/2 : width;
+    const u32 output_height=scaling==2 ? height/2 : height;
+    return output_width==240 && output_height==320;
 }
 void UiTransfer(u32 source, u32 destination, u32 width, u32 height) {
     if (!UiEnabled() || width!=240 || height!=320) return;
