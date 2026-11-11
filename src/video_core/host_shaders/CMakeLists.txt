@@ -22,7 +22,6 @@ set(SHADER_FILES
     opengl_present_anaglyph.frag
     opengl_present_interlaced.frag
     vulkan_depth_to_buffer.comp
-    vulkan_leaf_ui.frag
     vulkan_present.frag
     vulkan_present.vert
     vulkan_present_anaglyph.frag

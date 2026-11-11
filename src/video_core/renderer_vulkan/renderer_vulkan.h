@@ -157,8 +157,6 @@ private:
 #ifdef HAVE_LIBRETRO
     vk::Pipeline tool_ring_pipeline{};
     vk::ShaderModule tool_ring_vertex_shader{},tool_ring_fragment_shader{};
-    vk::ShaderModule leaf_ui_shader{};
-    vk::Pipeline leaf_ui_pipeline{};
     std::unique_ptr<StreamBuffer> tool_ring_buffer;
 #endif
     vk::UniquePipelineLayout cursor_pipeline_layout{};

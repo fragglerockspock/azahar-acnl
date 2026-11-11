@@ -1,4 +1,3 @@
-#include "core/leaf_acnl/ui_archive.h"
 #include "core/leaf_acnl/ui.h"
 // Copyright 2020-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
@@ -84,26 +83,56 @@ void LayeredFS::Load() {
     }
 
     if (acnl_ui_patch) {
-        const float aspect=static_cast<float>(Settings::acnl_camera_aspect_width.load())/
-                           static_cast<float>(Settings::acnl_camera_aspect_height.load());
-        const float correction=(400.0f/240.0f)/aspect;
-        size_t roots=0, panes=0, keys=0;
-        for (auto& [path,file] : file_path_map) {
-            if (path.find("Layout/")==std::string::npos || path.size()<4 ||
-                path.substr(path.size()-4)!=".arc" || file->relocation.type!=0 ||
-                file->relocation.size>4*1024*1024) continue;
+        for (const auto& [path,file] : file_path_map) {
+            if ((!LeafACNL::IsToolIconArchivePath(path) && !LeafACNL::IsUiArchivePath(path)) || file->relocation.size>4*1024*1024) continue;
             std::vector<u8> bytes(file->relocation.size);
-            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())!=bytes.size()) continue;
-            const auto changed=LeafACNL::PatchUiArchive(path,bytes,correction);
-            if (LeafACNL::IsToolIconArchivePath(path)) LeafACNL::SetToolIconArchive(bytes);
-            if (LeafACNL::IsUiArchivePath(path)) LeafACNL::RegisterUiArchive(path,bytes);
-            if (changed.Any()) {
-                roots+=changed.top_roots; panes+=changed.hidden_panes; keys+=changed.keyed_textures;
-                file->relocation.type=2;
-                file->relocation.patched_file=std::move(bytes);
+            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) {
+                if (LeafACNL::IsToolIconArchivePath(path)) LeafACNL::SetToolIconArchive(bytes);
+                else LeafACNL::RegisterUiArchive(path,bytes);
             }
         }
-        LOG_INFO(Service_FS,"Leaf UI patch: {} top roots, {} masked panes, {} keyed textures",roots,panes,keys);
+        const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
+                             static_cast<float>(Settings::acnl_camera_aspect_height.load());
+        const float correction = (400.0f / 240.0f) / aspect;
+        if (correction > 0.0f && correction < 2.0f) {
+            std::size_t patched_panes = 0;
+            for (auto& [path, file] : file_path_map) {
+                if (path.find("Layout/") == std::string::npos ||
+                    path.size() < 4 || path.substr(path.size() - 4) != ".arc" ||
+                    file->relocation.type != 0 || file->relocation.size > 4 * 1024 * 1024) {
+                    continue;
+                }
+                std::vector<u8> bytes(file->relocation.size);
+                if (romfs->ReadFile(file->relocation.original_offset, bytes.size(),
+                                    bytes.data()) != bytes.size()) {
+                    continue;
+                }
+                if (bytes.size() < 80 || std::memcmp(bytes.data(), "darc", 4) != 0) {
+                    continue;
+                }
+                std::size_t changes = 0;
+                for (std::size_t i = 0; i + 76 <= bytes.size(); ++i) {
+                    if (std::memcmp(bytes.data() + i, "pan1", 4) != 0 ||
+                        std::memcmp(bytes.data() + i + 12, "RootPane", 8) != 0) {
+                        continue;
+                    }
+                    float original{};
+                    std::memcpy(&original, bytes.data() + i + 60, sizeof(original));
+                    if (original != 1.0f) {
+                        continue;
+                    }
+                    std::memcpy(bytes.data() + i + 60, &correction, sizeof(correction));
+                    ++changes;
+                }
+                if (changes != 0) {
+                    file->relocation.type = 2;
+                    file->relocation.patched_file = std::move(bytes);
+                    patched_panes += changes;
+                }
+            }
+            LOG_INFO(Service_FS, "ACNL layout compensation applied to {} root panes",
+                     patched_panes);
+        }
     }
 
     RebuildMetadata();

@@ -15,24 +15,20 @@ namespace LeafACNL {
 namespace {
 constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32;
 std::atomic_bool enabled{false};
-std::atomic_int gpu_ready{-1};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
 std::unordered_set<u64> dimensions;
 struct Frame {
+    u64 epoch = 0;
     u32 tags = 0;
     UiRect choice;
     UiRect map;
     u64 sequence = 0;
-    bool sealed = false;
 };
-std::unordered_map<u32, Frame> targets, published;
-struct BottomBuffer {size_t size; u32 format;};
-std::unordered_map<u32,BottomBuffer> bottom_buffers;
-Frame last_completed;
-bool have_completed=false;
+std::unordered_map<u32, Frame> targets;
+u64 epoch = 1;
 Frame displayed;
-u64 draw_count = 0, match_count = 0, transfer_count = 0, copy_count = 0, present_count = 0;
+u64 draw_count = 0, match_count = 0, transfer_count = 0;
 void Union(UiRect& a, UiRect b) {
     if (!b.Valid()) return;
     if (!a.Valid()) { a = b; return; }
@@ -47,7 +43,7 @@ u32 Tags(std::string_view name) {
                               "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
         if (name.find(prefix) == 0) tags |= Map;
     }
-    if (name.find("selWin/slct_win.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Choice;
+    if (name.find("selWin/slct_win.arc:") == 0) tags |= Choice;
     if (name == "common/cmn_btn.arc:my_cbn_btn.bclim") tags |= MapControl;
     if ((tags&Map) && (name.find(":tc_map_list_win") != std::string_view::npos ||
                        name.find(":tc_map_listwin_arrow.bclim") != std::string_view::npos))
@@ -88,28 +84,21 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
     if (format>=bits.size() || !width || !height || width>2048 || height>2048) return 0;
     return size_t{width}*height*bits[format]/8;
 }
-void SetUiGpuReady(bool ready) { gpu_ready=ready ? 1 : 0; }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 6 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
-           " C "+std::to_string(copy_count)+" S "+std::to_string(present_count)+
-           " TAG "+std::to_string(displayed.tags)+" GPU "+
-           (gpu_ready.load()<0 ? "NA" : (gpu_ready.load() ? "OK" : "OFF"));
+           " TAG "+std::to_string(displayed.tags);
 }
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
     enabled = false;
-    gpu_ready=-1;
     textures.clear();
     dimensions.clear();
     targets.clear();
     displayed = {};
-    published.clear();
-    bottom_buffers.clear();
-    last_completed = {};
-    have_completed = false;
-    draw_count = match_count = transfer_count = copy_count = present_count = 0;
+    epoch = 1;
+    draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
@@ -173,99 +162,40 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     auto& frame = targets[target];
-    if (frame.sealed) frame = {};
+    if (frame.epoch != epoch) frame = {epoch,0,{}, {}};
     frame.tags |= tags;
     frame.sequence = ++draw_count;
     if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
 }
-void UiRememberBottom(u32 source, size_t size, u32 format) {
-    if (!UiEnabled() || !source || !size || size>16*1024*1024 || size>UINT32_MAX-source || format>4) return;
-    std::lock_guard lock(ui_mutex);
-    bottom_buffers[source]={size,format};
-}
-bool UiKeyFill(u32 start, u32 end, u32& value, u32& control) {
-    if (!UiEnabled() || end<=start) return false;
-    std::lock_guard lock(ui_mutex);
-    for (const auto& [address,buffer] : bottom_buffers) {
-        if (u64{start}>=u64{address}+buffer.size || end<=address) continue;
-        control &= ~0x300u;
-        switch (buffer.format) {
-        case 0: value=0xff00ffff; control|=0x200; break;
-        case 1: value=(value&0xff000000)|0xff00ff; control|=0x100; break;
-        case 2: value=(value&0xffff0000)|0xf81f; break;
-        case 3: value=(value&0xffff0000)|0xf83f; break;
-        case 4: value=(value&0xffff0000)|0xf0ff; break;
-        default: return false;
-        }
-        targets[address]={};
-        return true;
-    }
-    return false;
-}
-bool IsUiBottomTransfer(u32 width, u32 height, u32 scaling, u32 destination,
-                        u32 bottom_first, u32 bottom_second) {
-    if (!width || !height || scaling>2 || !destination) return false;
-    if ((bottom_first && destination==bottom_first) ||
-        (bottom_second && destination==bottom_second)) return true;
-    const u32 output_width=scaling ? width/2 : width;
-    const u32 output_height=scaling==2 ? height/2 : height;
-    const auto native_bottom=[](u32 w,u32 h) { return h==320 || (w==320 && h<=256); };
-    return native_bottom(width,height) || native_bottom(output_width,output_height);
-}
-void UiCopy(u32 source, u32 destination, bool texture_copy) {
-    if (!UiEnabled() || !source || !destination) return;
+void UiTransfer(u32 source, u32 destination) {
+    if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     ++transfer_count;
-    if (texture_copy) ++copy_count;
-    const auto it=targets.find(source);
-    if (it==targets.end()) {
-        targets.erase(destination);
-        published.erase(destination);
-        return;
-    }
-    const Frame snapshot=it->second;
-    it->second.sealed=true;
-    targets[destination]=snapshot;
-    targets[destination].sealed=true;
-    published[destination]=snapshot;
-    if (snapshot.tags) {
-        last_completed=snapshot;
-        have_completed=true;
-    }
-}
-void UiPresent(u32 bottom) {
-    if (!UiEnabled() || !bottom) return;
-    std::lock_guard lock(ui_mutex);
-    ++present_count;
-    const auto it=targets.find(bottom);
-    if (it==targets.end()) return;
-    published[bottom]=it->second;
-    last_completed=it->second;
-    have_completed=true;
-    it->second.sealed=true;
-}
-void UiTransfer(u32 source, u32 destination, u32 width, u32 height) {
-    if (!UiEnabled() || width!=240 || height!=320) return;
-    std::lock_guard lock(ui_mutex);
-    auto& frame=targets[source];
-    published[destination]=frame;
-    last_completed=frame;
-    have_completed=true;
-    frame.sealed=true;
+    const auto it = targets.find(source);
+    if (it != targets.end()) targets[destination] = it->second;
+    else targets.erase(destination);
 }
 void FinishUiFrame(u32 bottom) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
-    const auto it=published.find(bottom);
-    const u32 previous=displayed.tags;
-    if (it!=published.end()) displayed=it->second;
-    else if (have_completed) displayed=last_completed;
-    else displayed={};
-    if (previous!=displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
+    const auto it = targets.find(bottom);
+    const u32 previous = displayed.tags;
+    displayed = it == targets.end() ? Frame{} : it->second;
+    if (it == targets.end()) {
+        for (const auto& [address,frame] : targets) {
+            if (frame.epoch==epoch && frame.tags && frame.sequence>displayed.sequence)
+                displayed = frame;
+        }
+    }
+    if (previous != displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
+    ++epoch;
+    for (auto p=targets.begin();p!=targets.end();) {
+        if (p->first!=bottom && p->second.epoch+120<epoch) p=targets.erase(p);
+        else ++p;
+    }
 }
-
 std::vector<UiRegion> UiRegions(float width, float height) {
     std::lock_guard lock(ui_mutex);
     if (width<=0 || height<=0) return {};
@@ -274,9 +204,7 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         if ((tags&Map) && !(tags&HudButton))
             return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.52f)};
         const auto source = displayed.choice.Valid() ? Crop(displayed.choice,3) : UiRect{40,1,280,216};
-        auto region=Region(source,width,height,.965f,.54f,1,1,.8f);
-        region.opacity=.96f;
-        return {region};
+        return {Region(source,width,height,.965f,.54f,1,1,.8f)};
     }
     if ((tags&Map) && (tags&MapControl))
         return {Region({63,17,258,201},width,height,.97f,.03f,.5f,0,.5f,-64,0),
@@ -313,55 +241,27 @@ bool UiTouch(float x, float y, float width, float height, float& touch_x, float&
     return false;
 }
 
-std::array<float,4> UiKeyPixel(float r, float g, float b, float threshold, float softness) {
-    const auto smooth=[](float lo,float hi,float x) {
-        const float t=std::clamp((x-lo)/(hi-lo),0.0f,1.0f);
-        return t*t*(3-2*t);
-    };
-    float alpha=1-std::clamp(std::min(r,b)-g,0.0f,1.0f);
-    const float div=std::max(alpha,.001f);
-    std::array<float,3> color{std::clamp((r-(1-alpha))/div,0.0f,1.0f),
-                              std::clamp(g/div,0.0f,1.0f),
-                              std::clamp((b-(1-alpha))/div,0.0f,1.0f)};
-    const float distance=std::sqrt((color[0]-.54f)*(color[0]-.54f)+
-        (color[1]-.54f)*(color[1]-.54f)+(color[2]-.885f)*(color[2]-.885f));
-    const float rim=1-smooth(.06f,.14f,distance);
-    constexpr std::array<float,3> neutral{.06f,.05f,.09f};
-    for(size_t i=0;i<3;++i) color[i]=color[i]*(1-rim)+neutral[i]*rim;
-    alpha*=1-.6f*rim;
-    alpha*=smooth(threshold,threshold+softness,alpha);
-    return {color[0]*alpha,color[1]*alpha,color[2]*alpha,alpha};
-}
 void CompositeUi(u8* output, size_t pitch, u32 width, u32 height,
                  const u8* bottom, size_t bottom_size, u32 bottom_stride) {
     if (!output || !bottom || bottom_stride<320 || pitch<size_t{width}*4 ||
         bottom_size<size_t{bottom_stride}*240*4) return;
-    const auto regions=UiRegions(static_cast<float>(width),static_cast<float>(height));
-    static bool announced=false;
-    if (!regions.empty() && !announced) { LOG_INFO(Core,"Leaf UI software composition active"); announced=true; }
-    const auto sample=[&](int x,int y) {
-        const u8* src=bottom+(size_t{static_cast<u32>(std::clamp(y,0,239))}*bottom_stride+std::clamp(x,0,319))*4;
-        return UiKeyPixel(src[0]/255.0f,src[1]/255.0f,src[2]/255.0f);
-    };
+    const auto regions = UiRegions(static_cast<float>(width),static_cast<float>(height));
+    static bool announced = false;
+    if (!regions.empty() && !announced) { LOG_INFO(Core,"Leaf UI software composition active"); announced = true; }
     for (const auto& region : regions) {
         if (region.shade>0) {
             for (u32 y=0;y<height;++y) for (u32 x=0;x<width;++x)
-                for (u32 c=0;c<3;++c) output[y*pitch+x*4+c]=
+                for (u32 c=0;c<3;++c) output[y*pitch+x*4+c] =
                     static_cast<u8>(output[y*pitch+x*4+c]*(1-region.shade));
         }
-        const auto& dst=region.destination;
-        if (!dst.Valid()) continue;
-        for (int y=std::max(0,static_cast<int>(dst.top)); y<std::min(static_cast<int>(height),static_cast<int>(dst.bottom)); ++y) {
-            for (int x=std::max(0,static_cast<int>(dst.left)); x<std::min(static_cast<int>(width),static_cast<int>(dst.right)); ++x) {
-                const float sx=region.source.left+(x+.5f-dst.left)/(dst.right-dst.left)*(region.source.right-region.source.left)-.5f;
-                const float sy=region.source.top+(y+.5f-dst.top)/(dst.bottom-dst.top)*(region.source.bottom-region.source.top)-.5f;
-                const int ix=static_cast<int>(std::floor(sx)), iy=static_cast<int>(std::floor(sy));
-                const float fx=sx-ix,fy=sy-iy;
-                const auto c00=sample(ix,iy),c10=sample(ix+1,iy),c01=sample(ix,iy+1),c11=sample(ix+1,iy+1);
-                std::array<float,4> c{};
-                for(size_t i=0;i<4;++i) c[i]=((c00[i]*(1-fx)+c10[i]*fx)*(1-fy)+(c01[i]*(1-fx)+c11[i]*fx)*fy)*region.opacity;
-                u8* pixel=output+size_t{static_cast<u32>(y)}*pitch+static_cast<u32>(x)*4;
-                for(size_t i=0;i<3;++i) pixel[i]=static_cast<u8>(std::clamp(std::round(c[2-i]*255+pixel[i]*(1-c[3])),0.0f,255.0f));
+        const auto& dst = region.destination;
+        for (int y=std::max(0,static_cast<int>(dst.top)); y<std::min(static_cast<int>(height),static_cast<int>(std::ceil(dst.bottom))); ++y) {
+            for (int x=std::max(0,static_cast<int>(dst.left)); x<std::min(static_cast<int>(width),static_cast<int>(std::ceil(dst.right))); ++x) {
+                const auto sx = static_cast<u32>(std::clamp(region.source.left+(x+.5f-dst.left)/(dst.right-dst.left)*(region.source.right-region.source.left),0.0f,319.0f));
+                const auto sy = static_cast<u32>(std::clamp(region.source.top+(y+.5f-dst.top)/(dst.bottom-dst.top)*(region.source.bottom-region.source.top),0.0f,239.0f));
+                const u8* src = bottom+(size_t{sy}*bottom_stride+sx)*4;
+                u8* pixel = output+size_t{static_cast<u32>(y)}*pitch+static_cast<u32>(x)*4;
+                pixel[0]=src[2]; pixel[1]=src[1]; pixel[2]=src[0]; pixel[3]=0;
             }
         }
     }
