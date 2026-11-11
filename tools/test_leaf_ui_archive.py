@@ -12,6 +12,7 @@ with tempfile.TemporaryDirectory(prefix="leaf-ui-archive-") as temp:
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include "core/leaf_acnl/ui_archive.cpp"
@@ -68,14 +69,40 @@ int main(int argc,char** argv) {
             if(std::string(name)=="slct_win.arc")assert(changed.top_roots==0 && changed.hidden_panes==3);
         }
     }
+    if(argc==2) {
+        size_t scanned=0;
+        for(const auto& file:std::filesystem::recursive_directory_iterator(std::string(argv[1])+"/all")) {
+            if(!file.is_regular_file() || file.path().extension()!=".arc")continue;
+            std::ifstream f(file.path(),std::ios::binary);
+            std::vector<u8> bytes{std::istreambuf_iterator<char>(f),{}};
+            const size_t size=bytes.size();
+            PatchUiArchive("Layout/"+std::filesystem::relative(file.path(),std::string(argv[1])+"/all").generic_string(),bytes,.7692308f);
+            assert(bytes.size()==size);
+            ++scanned;
+        }
+        std::ifstream expected_file(std::string(argv[1])+"/archive_count");
+        size_t expected=0;expected_file>>expected;
+        assert(scanned>0 && scanned==expected);
+        std::cout<<scanned<<" supplied archives passed complete memory-safety scan\n";
+    }
     std::cout<<"Leaf native masks, key blocks and independent top/bottom proportions passed\n";
 }
 ''')
-    subprocess.run(["g++","-std=c++17","-Wall","-Wextra","-Werror","-I"+str(root/"src"),str(folder/"test.cpp"),"-o",str(folder/"test")],check=True)
+    sanitizer=["-fsanitize=address,undefined","-fno-omit-frame-pointer"] if os.environ.get("LEAF_SANITIZE") else []
+    subprocess.run(["g++","-std=c++17","-Wall","-Wextra","-Werror"]+sanitizer+["-I"+str(root/"src"),str(folder/"test.cpp"),"-o",str(folder/"test")],check=True)
     args=[str(folder/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
             for name in ["Menu/menu_tab.arc","Menu/mvmnt_undscrn.arc","msgWin/msg_win.arc","selWin/slct_win.arc"]:
                 (folder/Path(name).name).write_bytes(archive.read(name))
+            count=0
+            for name in archive.namelist():
+                relative=Path(name)
+                if not name.endswith(".arc") or relative.is_absolute() or ".." in relative.parts:continue
+                target=folder/"all"/relative
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(archive.read(name))
+                count+=1
+            (folder/"archive_count").write_text(str(count))
         args.append(str(folder))
     subprocess.run(args,check=True)

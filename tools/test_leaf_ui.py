@@ -179,7 +179,9 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).empty());
     assert(Tags("selWin/slct_win.arc:im_cmn_arrow32_00.bclim")==0);
     assert(Tags("selWin/slct_win.arc:im_cmn_crl_W10_00.bclim")==0);
-    assert(UiStatus().find("UI FIX 3 REG ")==0);
+    assert(UiStatus().find("UI FIX 4 REG ")==0);
+    SetUiGpuReady(true);assert(UiStatus().find("GPU OK")!=std::string::npos);
+    SetUiGpuReady(false);assert(UiStatus().find("GPU OFF")!=std::string::npos);
     const auto transparent=UiKeyPixel(1,0,1);
     assert(transparent[0]==0 && transparent[1]==0 && transparent[2]==0 && transparent[3]==0);
     const auto green=UiKeyPixel(0,1,0), edge=UiKeyPixel(1,.5f,1);

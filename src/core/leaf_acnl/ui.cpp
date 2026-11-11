@@ -15,6 +15,7 @@ namespace LeafACNL {
 namespace {
 constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32;
 std::atomic_bool enabled{false};
+std::atomic_int gpu_ready{-1};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
 std::unordered_set<u64> dimensions;
@@ -87,15 +88,18 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
     if (format>=bits.size() || !width || !height || width>2048 || height>2048) return 0;
     return size_t{width}*height*bits[format]/8;
 }
+void SetUiGpuReady(bool ready) { gpu_ready=ready ? 1 : 0; }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 3 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 4 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
-           " TAG "+std::to_string(displayed.tags);
+           " TAG "+std::to_string(displayed.tags)+" GPU "+
+           (gpu_ready.load()<0 ? "NA" : (gpu_ready.load() ? "OK" : "OFF"));
 }
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
     enabled = false;
+    gpu_ready=-1;
     textures.clear();
     dimensions.clear();
     targets.clear();

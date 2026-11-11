@@ -21,6 +21,7 @@ struct UiRegion {
 UiRect UiLandscapeBounds(UiRect raw);
 size_t UiTextureSize(u32 format, u32 width, u32 height);
 std::string UiStatus();
+void SetUiGpuReady(bool ready);
 void ResetUi();
 bool IsUiArchivePath(std::string_view path);
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
