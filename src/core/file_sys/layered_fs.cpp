@@ -1,4 +1,5 @@
 #include "core/leaf_acnl/ui.h"
+#include "core/leaf_acnl/top_layout_scale.h"
 // Copyright 2020-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -110,20 +111,7 @@ void LayeredFS::Load() {
                 if (bytes.size() < 80 || std::memcmp(bytes.data(), "darc", 4) != 0) {
                     continue;
                 }
-                std::size_t changes = 0;
-                for (std::size_t i = 0; i + 76 <= bytes.size(); ++i) {
-                    if (std::memcmp(bytes.data() + i, "pan1", 4) != 0 ||
-                        std::memcmp(bytes.data() + i + 12, "RootPane", 8) != 0) {
-                        continue;
-                    }
-                    float original{};
-                    std::memcpy(&original, bytes.data() + i + 60, sizeof(original));
-                    if (original != 1.0f) {
-                        continue;
-                    }
-                    std::memcpy(bytes.data() + i + 60, &correction, sizeof(correction));
-                    ++changes;
-                }
+                const auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction);
                 if (changes != 0) {
                     file->relocation.type = 2;
                     file->relocation.patched_file = std::move(bytes);

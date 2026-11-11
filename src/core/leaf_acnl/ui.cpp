@@ -43,7 +43,7 @@ u32 Tags(std::string_view name) {
                               "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
         if (name.find(prefix) == 0) tags |= Map;
     }
-    if (name.find("selWin/slct_win.arc:") == 0) tags |= Choice;
+    if (name.find("selWin/slct_win.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Choice;
     if (name == "common/cmn_btn.arc:my_cbn_btn.bclim") tags |= MapControl;
     if ((tags&Map) && (name.find(":tc_map_list_win") != std::string_view::npos ||
                        name.find(":tc_map_listwin_arrow.bclim") != std::string_view::npos))
@@ -86,7 +86,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2R REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags);
 }

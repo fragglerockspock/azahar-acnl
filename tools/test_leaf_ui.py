@@ -74,6 +74,11 @@ int main(int argc,char** argv) {
     const auto choice=Register("Layout/selWin/slct_win.arc","my_slct_body.bclim",3);
     const auto map=Register("Layout/Menu/map_village.arc","tc_map_list_win_00.bclim",4);
     assert(tab==1 && hud==3 && choice==8 && map==(4|32));
+    assert(Tags("selWin/slct_win.arc:im_cmn_arrow32_00.bclim")==0);
+    assert(Tags("selWin/slct_win.arc:im_cmn_crl_W10_00.bclim")==0);
+    const auto shared_tab=Register("Layout/Menu/menu_tab.arc","im_cmn_arrow32_00.bclim",80);
+    const auto shared_choice=Register("Layout/selWin/slct_win.arc","im_cmn_arrow32_00.bclim",80);
+    assert(shared_tab==1 && shared_choice==1);
     assert(UiTextureSize(12,32,32)==512 && UiTextureSize(13,32,32)==1024);
     for(u32 format:{12u,13u}) {
         auto archive=Archive("my_men_tab_00.bclim",static_cast<u8>(20+format));
@@ -157,7 +162,7 @@ int main(int argc,char** argv) {
     UiDraw(300,0);
     FinishUiFrame(900);
     assert(UiRegions(522,240).empty());
-    assert(UiStatus().find("UI FIX 2 REG ")==0);
+    assert(UiStatus().find("UI FIX 2R REG ")==0);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {

@@ -1,0 +1,55 @@
+#pragma once
+
+#include <cmath>
+#include <cstring>
+#include <vector>
+#include "common/common_types.h"
+
+namespace LeafACNL {
+inline size_t PatchTopLayoutScale(std::vector<u8>& bytes, float correction) {
+    if (bytes.size()<28 || std::memcmp(bytes.data(),"darc",4) ||
+        !std::isfinite(correction) || correction<=0 || correction>=2) return 0;
+    const auto read=[&](size_t p) {
+        u32 value=0;
+        if (p<=bytes.size()-4) std::memcpy(&value,bytes.data()+p,4);
+        return value;
+    };
+    const size_t table=read(16);
+    if (table>bytes.size()-12) return 0;
+    const size_t count=read(table+8);
+    if (!count || count>(bytes.size()-table)/12) return 0;
+    size_t changes=0;
+    for (size_t i=0;i<count;++i) {
+        if (read(table+i*12)>>24) continue;
+        const size_t offset=read(table+i*12+4), size=read(table+i*12+8);
+        if (offset>bytes.size() || size>bytes.size()-offset || size<20 ||
+            std::memcmp(bytes.data()+offset,"CLYT",4)) continue;
+        u16 header=0;
+        std::memcpy(&header,bytes.data()+offset+6,2);
+        if (header<20 || header>size) continue;
+        const size_t end=offset+size;
+        bool top=false;
+        for (size_t p=offset+header;p+8<=end;) {
+            const size_t section=read(p+4);
+            if (section<8 || section>end-p) break;
+            if (!std::memcmp(bytes.data()+p,"lyt1",4) && section>=20) {
+                float width=0,height=0;
+                std::memcpy(&width,bytes.data()+p+12,4);
+                std::memcpy(&height,bytes.data()+p+16,4);
+                top=width==400 && height==240;
+            }
+            if (top && section>=76 && !std::memcmp(bytes.data()+p,"pan1",4) &&
+                !std::memcmp(bytes.data()+p+12,"RootPane\0",9)) {
+                float original=0;
+                std::memcpy(&original,bytes.data()+p+60,4);
+                if (original==1 && correction!=1) {
+                    std::memcpy(bytes.data()+p+60,&correction,4);
+                    ++changes;
+                }
+            }
+            p+=section;
+        }
+    }
+    return changes;
+}
+}
