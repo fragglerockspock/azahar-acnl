@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -24,6 +25,11 @@ bool IsUiArchivePath(std::string_view path);
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
 bool UiEnabled();
 u32 UiTexture(const u8* data, size_t size, u32 width, u32 height);
+void UiTarget(u32 address, u32 width, u32 height, u32 format);
+bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control);
+void UiPresent(u32 bottom);
+void SetUiAlphaReady(bool ready);
+std::array<float,4> UiKeyPixel(float r, float g, float b);
 void UiDraw(u32 target, u32 tags, UiRect bounds = {});
 void UiTransfer(u32 source, u32 destination);
 void FinishUiFrame(u32 bottom);

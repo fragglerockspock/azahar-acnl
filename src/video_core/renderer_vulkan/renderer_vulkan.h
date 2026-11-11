@@ -145,6 +145,7 @@ private:
     std::array<vk::ShaderModule, PRESENT_PIPELINES> present_shaders;
     std::array<vk::Sampler, 2> present_samplers;
     vk::ShaderModule present_vertex_shader;
+    vk::Pipeline leaf_alpha_pipeline{};
     u32 current_pipeline = 0;
 
     std::array<ScreenInfo, 3> screen_infos{};

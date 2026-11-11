@@ -336,6 +336,9 @@ void GPU::SetBufferSwap(u32 screen_id, const Service::GSP::FrameBufferInfo& info
     framebuffer.format = (framebuffer.format & 0xFFFF0000) | (info.format & 0xFFFF);
     framebuffer.active_fb = info.shown_fb & 0xFF;
 
+    if (screen_id==1)
+        LeafACNL::UiPresent(framebuffer.active_fb==0 ? framebuffer.address_left1 : framebuffer.address_left2);
+
     // Notify debugger about the buffer swap.
     if (impl->debug_context) {
         impl->debug_context->OnEvent(Pica::DebugContext::Event::BufferSwapped, nullptr);
@@ -498,9 +501,10 @@ void GPU::MemoryFill(u32 index, u32 intr_index) {
         return;
     }
 
-    // Perform memory fill.
-    if (!impl->rasterizer->AccelerateFill(config)) {
-        impl->sw_blitter->MemoryFill(config);
+    auto keyed=config;
+    LeafACNL::UiPrepareFill(keyed.GetStartAddress(),keyed.GetEndAddress(),keyed.value_32bit,keyed.control);
+    if (!impl->rasterizer->AccelerateFill(keyed)) {
+        impl->sw_blitter->MemoryFill(keyed);
     }
 
     // Treat fill as texture transfer from VRAM

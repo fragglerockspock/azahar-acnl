@@ -78,7 +78,7 @@ int main(int argc,char** argv) {
     assert(Tags("selWin/slct_win.arc:im_cmn_crl_W10_00.bclim")==0);
     const auto shared_tab=Register("Layout/Menu/menu_tab.arc","im_cmn_arrow32_00.bclim",80);
     const auto shared_choice=Register("Layout/selWin/slct_win.arc","im_cmn_arrow32_00.bclim",80);
-    assert(shared_tab==1 && shared_choice==1);
+    assert(shared_tab==0 && shared_choice==0);
     assert(UiTextureSize(12,32,32)==512 && UiTextureSize(13,32,32)==1024);
     for(u32 format:{12u,13u}) {
         auto archive=Archive("my_men_tab_00.bclim",static_cast<u8>(20+format));
@@ -109,7 +109,7 @@ int main(int argc,char** argv) {
     for(size_t i=0;i<bottom.size();i+=4){bottom[i]=10;bottom[i+1]=20;bottom[i+2]=30;bottom[i+3]=255;}
     CompositeUi(output.data(),pitch,522,240,bottom.data(),bottom.size(),320);
     assert(output[0]==110 && output[3]==200);
-    assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==0);
+    assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==200);
     assert(output[522*4]==200);
     for(int frame=0;frame<180;++frame) FinishUiFrame(200);
     assert(UiRegions(522,240).size()==1);
@@ -158,11 +158,92 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).empty());
     UiDraw(300,tab);
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1);
-    UiDraw(300,0);
-    FinishUiFrame(900);
     assert(UiRegions(522,240).empty());
-    assert(UiStatus().find("UI FIX 2R REG ")==0);
+    UiTransfer(300,901);
+    FinishUiFrame(900);
+    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    UiDraw(300,hud);
+    for(int frame=0;frame<180;++frame) FinishUiFrame(900);
+    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    UiDraw(300,map,{64,26,280,214});
+    UiTransfer(300,902);
+    FinishUiFrame(902);
+    assert(UiRegions(522,240).size()==2);
+    UiDraw(400,0);
+    UiTransfer(400,401);
+    for(int frame=0;frame<180;++frame) FinishUiFrame(902);
+    assert(UiRegions(522,240).size()==2);
+    UiDraw(300,0);
+    UiTransfer(300,902);
+    FinishUiFrame(902);
+    assert(UiRegions(522,240).empty());
+    UiDraw(500,choice,{100,105,280,230});
+    FinishUiFrame(902);
+    assert(UiRegions(522,240).empty());
+    UiPresent(9999);
+    FinishUiFrame(9999);
+    assert(UiRegions(522,240).size()==1);
+    UiDraw(500,0);
+    for(int frame=0;frame<180;++frame)FinishUiFrame(9999);
+    assert(UiRegions(522,240).size()==1);
+    UiPresent(9999);
+    FinishUiFrame(9999);
+    assert(UiRegions(522,240).empty());
+    SetUiAlphaReady(true);
+    const std::array<u32,5> key_values{0xff00ffff,0xff00ff,0xf83f,0xf81f,0xf0ff};
+    const std::array<u32,5> pixel_bytes{4,3,2,2,2};
+    for(u32 format=0;format<5;++format) {
+        const u32 address=0x100000+format*0x100000,end=address+320*240*pixel_bytes[format];
+        UiTarget(address,320,240,format);
+        UiDraw(address,tab);
+        u32 value=0,control=0x80000000;
+        assert(!UiPrepareFill(address+8,end,value,control));
+        assert(value==0 && control==0x80000000);
+        assert(!UiPrepareFill(address,end-8,value,control));
+        assert(!UiPrepareFill(address,end+8,value,control));
+        assert(UiPrepareFill(address,end,value,control));
+        assert(value==key_values[format]);
+        assert((control&0x300)==(format==0 ? 0x200u : format==1 ? 0x100u : 0u));
+        for(const auto shape:std::array<std::array<u32,2>,3>{{{400,240},{240,400},{256,512}}}) {
+            UiTarget(address,shape[0],shape[1],format);
+            UiDraw(address,tab);
+            value=123;control=0x80000000;
+            assert(!UiPrepareFill(address,address+shape[0]*shape[1]*pixel_bytes[format],value,control));
+            assert(value==123 && control==0x80000000);
+        }
+    }
+    u32 value=123,control=0;
+    assert(!UiPrepareFill(0x900000,0xa00000,value,control) && value==123 && control==0);
+    const auto transparent=UiKeyPixel(1,0,1),white=UiKeyPixel(1,1,1),black=UiKeyPixel(0,0,0);
+    assert(transparent[3]==0 && white[3]==1 && black[3]==1);
+    const auto edge=UiKeyPixel(1,.5f,1);
+    assert(edge[0]==1 && edge[1]==1 && edge[2]==1 && edge[3]==.5f);
+    UiTarget(0xb00000,320,240,0);
+    UiDraw(0xb00000,hud);
+    UiTransfer(0xb00000,0xc00000);
+    FinishUiFrame(0xc00000);
+    std::fill(output.begin(),output.end(),100);
+    for(size_t i=0;i<bottom.size();i+=4){bottom[i]=255;bottom[i+1]=0;bottom[i+2]=255;}
+    const auto original_output=output;
+    CompositeUi(output.data(),pitch,522,240,bottom.data(),bottom.size(),320);
+    assert(output==original_output);
+    const size_t green_pixel=(1*320+1)*4;
+    bottom[green_pixel]=0;bottom[green_pixel+1]=255;bottom[green_pixel+2]=0;
+    CompositeUi(output.data(),pitch,522,240,bottom.data(),bottom.size(),320);
+    assert(output[pitch+5*4]==0 && output[pitch+5*4+1]==255 && output[pitch+5*4+2]==0);
+    assert(output[pitch+5*4+3]==100);
+    std::fill(output.begin(),output.end(),100);
+    bottom[green_pixel]=255;bottom[green_pixel+1]=128;bottom[green_pixel+2]=255;
+    CompositeUi(output.data(),pitch,522,240,bottom.data(),bottom.size(),320);
+    assert(output[pitch+5*4]>170 && output[pitch+5*4]<185);
+    assert(output[pitch+5*4]==output[pitch+5*4+1] && output[pitch+5*4]==output[pitch+5*4+2]);
+    SetUiAlphaReady(false);
+    UiTarget(0xd00000,320,240,0);UiDraw(0xd00000,tab);
+    value=123;control=0;
+    assert(!UiPrepareFill(0xd00000,0xd00000+320*240*4,value,control) && value==123 && control==0);
+    SetUiAlphaReady(true);
+
+    assert(UiStatus().find("UI FIX 2S REG ")==0);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {

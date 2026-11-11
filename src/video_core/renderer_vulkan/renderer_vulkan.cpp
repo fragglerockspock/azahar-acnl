@@ -165,6 +165,8 @@ RendererVulkan::~RendererVulkan() {
         vmaDestroyImage(instance.GetAllocator(), info.texture.image, info.texture.allocation);
     }
 
+    LeafACNL::SetUiAlphaReady(false);
+    device.destroyPipeline(leaf_alpha_pipeline);
     device.destroyPipeline(cursor_pipeline);
 #ifdef HAVE_LIBRETRO
     device.destroyPipeline(tool_ring_pipeline);
@@ -501,6 +503,24 @@ void RendererVulkan::BuildPipelines() {
             instance.GetDevice().createGraphicsPipeline({}, pipeline_info);
         ASSERT_MSG(result == vk::Result::eSuccess, "Unable to build present pipelines");
         present_pipelines[i] = pipeline;
+        if (i==0) {
+            auto alpha_attachment=colorblend_attachment;
+            alpha_attachment.srcColorBlendFactor=vk::BlendFactor::eSrcAlpha;
+            alpha_attachment.dstColorBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            alpha_attachment.srcAlphaBlendFactor=vk::BlendFactor::eOne;
+            alpha_attachment.dstAlphaBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            auto alpha_blending=color_blending;
+            alpha_blending.pAttachments=&alpha_attachment;
+            auto alpha_info=pipeline_info;
+            alpha_info.pColorBlendState=&alpha_blending;
+            try {
+                const auto [alpha_result,alpha_pipeline]=instance.GetDevice().createGraphicsPipeline({},alpha_info);
+                if (alpha_result==vk::Result::eSuccess) leaf_alpha_pipeline=alpha_pipeline;
+            } catch (const vk::SystemError& error) {
+                LOG_ERROR(Render_Vulkan,"Leaf alpha pipeline unavailable: {}",error.what());
+            }
+            LeafACNL::SetUiAlphaReady(static_cast<bool>(leaf_alpha_pipeline));
+        }
     }
 
     // Build cursor pipeline (simple position-only, inverted color blending)
@@ -1126,8 +1146,10 @@ void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
             });
         }
         scheduler.Record([this,index=current_pipeline](vk::CommandBuffer cmdbuf) {
-            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,present_pipelines[index]);
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,leaf_alpha_pipeline ? leaf_alpha_pipeline : present_pipelines[index]);
         });
+        const int saved_right=draw_info.screen_id_r;
+        if (leaf_alpha_pipeline) draw_info.screen_id_r=-1;
         const auto original = screen_infos[2].texcoords;
         auto& tex = screen_infos[2].texcoords;
         const float tw = original.right-original.left;
@@ -1140,6 +1162,7 @@ void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
         DrawSingleScreen(2,dst.left,dst.top,dst.right-dst.left,dst.bottom-dst.top,
                          Layout::DisplayOrientation::Landscape);
         tex = original;
+        draw_info.screen_id_r=saved_right;
     }
 }
 

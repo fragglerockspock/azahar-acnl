@@ -19,14 +19,21 @@ std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
 std::unordered_set<u64> dimensions;
 struct Frame {
-    u64 epoch = 0;
+    bool sealed = false;
     u32 tags = 0;
     UiRect choice;
     UiRect map;
     u64 sequence = 0;
 };
 std::unordered_map<u32, Frame> targets;
-u64 epoch = 1;
+struct TargetInfo { u32 width=0,height=0,format=0; size_t size=0; bool bottom=false; };
+std::unordered_map<u32,TargetInfo> target_info;
+std::unordered_map<u32,Frame> completed;
+Frame last_completed;
+bool have_completed=false;
+std::atomic_bool alpha_ready{false};
+u64 key_count=0,event_sequence=0;
+u32 displayed_address=0;
 Frame displayed;
 u64 draw_count = 0, match_count = 0, transfer_count = 0;
 void Union(UiRect& a, UiRect b) {
@@ -37,11 +44,12 @@ void Union(UiRect& a, UiRect b) {
 }
 u32 Tags(std::string_view name) {
     u32 tags = 0;
-    if (name.find("Menu/menu_tab.arc:") == 0) tags |= Tab;
+    if (name.find("Menu/menu_tab.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos &&
+        name.find(":my_cmn_")==std::string_view::npos) tags |= Tab;
     if (name == "Menu/menu_tab.arc:my_men_btn_00.bclim") tags |= HudButton;
     for (const auto prefix : {"Menu/map_village.arc:", "Menu/map_island.arc:",
                               "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
-        if (name.find(prefix) == 0) tags |= Map;
+        if (name.find(prefix) == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Map;
     }
     if (name.find("selWin/slct_win.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Choice;
     if (name == "common/cmn_btn.arc:my_cbn_btn.bclim") tags |= MapControl;
@@ -86,9 +94,10 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2R REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2S REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
-           " TAG "+std::to_string(displayed.tags);
+           " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
+           " A "+(alpha_ready.load() ? "ON" : "OFF");
 }
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
@@ -97,7 +106,12 @@ void ResetUi() {
     dimensions.clear();
     targets.clear();
     displayed = {};
-    epoch = 1;
+    target_info.clear();
+    completed.clear();
+    last_completed={};
+    have_completed=false;
+    key_count=event_sequence=0;
+    displayed_address=0;
     draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
@@ -162,40 +176,110 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     auto& frame = targets[target];
-    if (frame.epoch != epoch) frame = {epoch,0,{}, {}};
+    if (frame.sealed) frame={};
+    auto& info=target_info[target];
+    const bool bottom_shape=!info.width ||
+        ((info.width==240 || info.width==256) && info.height==320) ||
+        (info.width==320 && info.height>=240 && info.height<=256);
+    if (bottom_shape && (tags&(Tab|Map|Choice))) info.bottom=true;
     frame.tags |= tags;
-    frame.sequence = ++draw_count;
+    ++draw_count;
+    frame.sequence = ++event_sequence;
     if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
+}
+void UiTarget(u32 address, u32 width, u32 height, u32 format) {
+    if (!UiEnabled() || !address) return;
+    std::lock_guard lock(ui_mutex);
+    auto& info=target_info[address];
+    if (info.width!=width || info.height!=height || info.format!=format) {
+        info={width,height,format,0,false};
+        targets[address]={};
+    }
+    constexpr std::array<u32,5> bytes{4,3,2,2,2};
+    if (format<bytes.size() && width && height && width<=1024 && height<=1024)
+        info.size=size_t{width}*height*bytes[format];
+}
+void SetUiAlphaReady(bool ready) { alpha_ready=ready; }
+bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
+    if (!UiEnabled() || end<=start) return false;
+    std::lock_guard lock(ui_mutex);
+    const auto it=target_info.find(start);
+    if (it==target_info.end() || !it->second.size ||
+        u64{end}!=u64{start}+it->second.size) return false;
+    targets[start]={};
+    targets[start].sequence=++event_sequence;
+    if (!alpha_ready || !it->second.bottom) return false;
+    control &= ~0x300u;
+    switch(it->second.format) {
+    case 0: value=0xff00ffff;control|=0x200;break;
+    case 1: value=(value&0xff000000)|0xff00ff;control|=0x100;break;
+    case 2: value=(value&0xffff0000)|0xf83f;break;
+    case 3: value=(value&0xffff0000)|0xf81f;break;
+    case 4: value=(value&0xffff0000)|0xf0ff;break;
+    default:return false;
+    }
+    ++key_count;
+    return true;
 }
 void UiTransfer(u32 source, u32 destination) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     ++transfer_count;
-    const auto it = targets.find(source);
-    if (it != targets.end()) targets[destination] = it->second;
-    else targets.erase(destination);
+    const auto it=targets.find(source);
+    if (it==targets.end()) {
+        targets.erase(destination);
+        completed[destination]={};
+        if(destination==displayed_address) {last_completed={};have_completed=true;}
+        return;
+    }
+    const Frame snapshot=it->second;
+    it->second.sealed=true;
+    targets[destination]=snapshot;
+    targets[destination].sealed=true;
+    completed[destination]=snapshot;
+    if (snapshot.tags || target_info[source].bottom) { last_completed=snapshot;have_completed=true; }
+}
+void UiPresent(u32 bottom) {
+    if (!UiEnabled()) return;
+    std::lock_guard lock(ui_mutex);
+    const auto exact=targets.find(bottom);
+    if (exact!=targets.end()) {
+        completed[bottom]=exact->second;
+        exact->second.sealed=true;
+        return;
+    }
+    u32 selected=0;
+    for (const auto& [address,frame]:targets) {
+        const auto info=target_info.find(address);
+        if (info!=target_info.end() && info->second.bottom &&
+            (!selected || frame.sequence>targets.at(selected).sequence)) selected=address;
+    }
+    if (selected) {
+        completed[bottom]=targets.at(selected);
+        targets.at(selected).sealed=true;
+    }
 }
 void FinishUiFrame(u32 bottom) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
-    const auto it = targets.find(bottom);
-    const u32 previous = displayed.tags;
-    displayed = it == targets.end() ? Frame{} : it->second;
-    if (it == targets.end()) {
-        for (const auto& [address,frame] : targets) {
-            if (frame.epoch==epoch && frame.tags && frame.sequence>displayed.sequence)
-                displayed = frame;
-        }
-    }
-    if (previous != displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
-    ++epoch;
-    for (auto p=targets.begin();p!=targets.end();) {
-        if (p->first!=bottom && p->second.epoch+120<epoch) p=targets.erase(p);
-        else ++p;
-    }
+    displayed_address=bottom;
+    const u32 previous=displayed.tags;
+    const auto done=completed.find(bottom);
+    if (done!=completed.end()) displayed=done->second;
+    else if (have_completed) displayed=last_completed;
+    if (previous!=displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
 }
+std::array<float,4> UiKeyPixel(float r,float g,float b) {
+    const float a=1-std::clamp(std::min(r,b)-g,0.0f,1.0f);
+    const float divisor=std::max(a,.001f);
+    const float t=std::clamp((a-.06f)/.08f,0.0f,1.0f);
+    return {std::clamp((r-(1-a))/divisor,0.0f,1.0f),
+            std::clamp(g/divisor,0.0f,1.0f),
+            std::clamp((b-(1-a))/divisor,0.0f,1.0f),a*t*t*(3-2*t)};
+}
+
 std::vector<UiRegion> UiRegions(float width, float height) {
     std::lock_guard lock(ui_mutex);
     if (width<=0 || height<=0) return {};
@@ -261,7 +345,9 @@ void CompositeUi(u8* output, size_t pitch, u32 width, u32 height,
                 const auto sy = static_cast<u32>(std::clamp(region.source.top+(y+.5f-dst.top)/(dst.bottom-dst.top)*(region.source.bottom-region.source.top),0.0f,239.0f));
                 const u8* src = bottom+(size_t{sy}*bottom_stride+sx)*4;
                 u8* pixel = output+size_t{static_cast<u32>(y)}*pitch+static_cast<u32>(x)*4;
-                pixel[0]=src[2]; pixel[1]=src[1]; pixel[2]=src[0]; pixel[3]=0;
+                const auto keyed=UiKeyPixel(src[0]/255.0f,src[1]/255.0f,src[2]/255.0f);
+                for (size_t c=0;c<3;++c)
+                    pixel[c]=static_cast<u8>(std::lround(keyed[2-c]*255*keyed[3]+pixel[c]*(1-keyed[3])));
             }
         }
     }

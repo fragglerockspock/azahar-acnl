@@ -19,6 +19,7 @@ RendererSoftware::RendererSoftware(Core::System& system, Pica::PicaCore& pica_,
 RendererSoftware::~RendererSoftware() = default;
 
 void RendererSoftware::SwapBuffers() {
+    LeafACNL::SetUiAlphaReady(true);
     system.perf_stats->StartSwap();
     const auto& leaf_bottom = pica.regs.framebuffer_config[1];
     LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2);

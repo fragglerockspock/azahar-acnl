@@ -1098,6 +1098,9 @@ void PicaCore::ProbeLeafUi(bool is_indexed) {
             if (minx<maxx && miny<maxy) bounds=LeafACNL::UiLandscapeBounds({minx,miny,maxx,maxy});
         }
     }
+    const auto& framebuffer=regs.internal.framebuffer.framebuffer;
+    LeafACNL::UiTarget(framebuffer.GetColorBufferPhysicalAddress(),framebuffer.GetWidth(),
+                      framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()));
     LeafACNL::UiDraw(regs.internal.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),tags,bounds);
 }
 

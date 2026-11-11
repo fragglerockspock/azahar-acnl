@@ -47,8 +47,18 @@ int main(int argc,char** argv) {
         auto truncated=Arc(400);truncated.resize(size);
         assert(PatchTopLayoutScale(truncated,correction)==0);
     }
+    for(const auto& example:std::vector<std::pair<const char*,const char*>>{
+            {"Menu/menu_tab.arc","im_tab_05"},{"selWin/slct_win.arc","P_kuchi_00"},
+            {"Menu/mvmnt_undscrn.arc","P_base_00"}}) {
+        auto bytes=Arc(std::string(example.first).find("mvmnt")!=std::string::npos ? 400 : 320,example.second);
+        auto expected_mask=bytes;expected_mask[304]&=254;
+        assert(LeafACNL::PatchLeafPaneMasks(example.first,bytes)==1 && bytes==expected_mask);
+        assert(LeafACNL::PatchLeafPaneMasks(example.first,bytes)==0);
+    }
+    auto unrelated=Arc(400,"P_kuchi_00");const auto unrelated_before=unrelated;
+    assert(LeafACNL::PatchLeafPaneMasks("selWin/slct_win.arc",unrelated)==0 && unrelated==unrelated_before);
     if(argc==2) {
-        size_t scanned=0,changed=0;
+        size_t scanned=0,changed=0,masks=0;
         for(const auto& file:std::filesystem::directory_iterator(argv[1])) {
             if(file.path().extension()!=".arc")continue;
             std::ifstream input(file.path(),std::ios::binary);
@@ -62,12 +72,27 @@ int main(int argc,char** argv) {
             assert(PatchTopLayoutScale(bytes,correction)==0);
             std::ofstream output(file.path().string()+".out",std::ios::binary);
             output.write(reinterpret_cast<const char*>(bytes.data()),bytes.size());
+            std::ifstream name_file(file.path().string()+".name");
+            std::string path;std::getline(name_file,path);
+            const auto before_masks=bytes;
+            const auto mask_count=LeafACNL::PatchLeafPaneMasks(path,bytes);
+            size_t mask_differences=0;
+            for(size_t i=0;i<bytes.size();++i) {
+                if(bytes[i]==before_masks[i])continue;
+                assert((before_masks[i]&1) && bytes[i]==(before_masks[i]&254));
+                ++mask_differences;
+            }
+            assert(mask_count==mask_differences);
+            if(path=="Menu/menu_tab.arc")assert(mask_count==4);
+            if(path=="selWin/slct_win.arc")assert(mask_count==2);
+            if(path=="Menu/mvmnt_undscrn.arc")assert(mask_count==2);
+            masks+=mask_count;
             ++scanned;changed+=count;
         }
-        assert(scanned>0 && changed>0);
+        assert(scanned>0 && changed>0 && masks==8);
         std::cout<<scanned<<" supplied archives checked; only "<<changed<<" top root scales changed\n";
     }
-    std::cout<<"Independent top/bottom layout scales and unchanged pane bytes passed\n";
+    std::cout<<"Independent layout scales and visibility-only pane masks passed\n";
 }
 ''')
     sanitizer = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"] if os.environ.get("LEAF_SANITIZE") else []
@@ -85,6 +110,7 @@ int main(int argc,char** argv) {
                 path = inputs / f"{index}.arc"
                 data = archive.read(name)
                 path.write_bytes(data)
+                Path(str(path) + ".name").write_text(name)
                 archives[name] = (path, data)
         arguments.append(str(inputs))
     subprocess.run(arguments, check=True)
