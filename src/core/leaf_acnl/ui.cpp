@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -22,10 +23,12 @@ struct Frame {
     u32 tags = 0;
     UiRect choice;
     UiRect map;
+    u64 sequence = 0;
 };
 std::unordered_map<u32, Frame> targets;
 u64 epoch = 1;
 Frame displayed;
+u64 draw_count = 0, match_count = 0, transfer_count = 0;
 void Union(UiRect& a, UiRect b) {
     if (!b.Valid()) return;
     if (!a.Valid()) { a = b; return; }
@@ -76,6 +79,17 @@ UiRect UiLandscapeBounds(UiRect raw) {
     if (!raw.Valid()) return {};
     return {320-raw.bottom,240-raw.right,320-raw.top,240-raw.left};
 }
+size_t UiTextureSize(u32 format, u32 width, u32 height) {
+    constexpr std::array<u32,14> bits{32,24,16,16,16,16,16,8,8,8,4,4,4,8};
+    if (format>=bits.size() || !width || !height || width>2048 || height>2048) return 0;
+    return size_t{width}*height*bits[format]/8;
+}
+std::string UiStatus() {
+    std::lock_guard lock(ui_mutex);
+    return "UI FIX 2 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+           " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
+           " TAG "+std::to_string(displayed.tags);
+}
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
     enabled = false;
@@ -84,6 +98,7 @@ void ResetUi() {
     targets.clear();
     displayed = {};
     epoch = 1;
+    draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
@@ -149,12 +164,15 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     auto& frame = targets[target];
     if (frame.epoch != epoch) frame = {epoch,0,{}, {}};
     frame.tags |= tags;
+    frame.sequence = ++draw_count;
+    if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
 }
 void UiTransfer(u32 source, u32 destination) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
+    ++transfer_count;
     const auto it = targets.find(source);
     if (it != targets.end()) targets[destination] = it->second;
     else targets.erase(destination);
@@ -165,6 +183,12 @@ void FinishUiFrame(u32 bottom) {
     const auto it = targets.find(bottom);
     const u32 previous = displayed.tags;
     displayed = it == targets.end() ? Frame{} : it->second;
+    if (it == targets.end()) {
+        for (const auto& [address,frame] : targets) {
+            if (frame.epoch==epoch && frame.tags && frame.sequence>displayed.sequence)
+                displayed = frame;
+        }
+    }
     if (previous != displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
     ++epoch;
     for (auto p=targets.begin();p!=targets.end();) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 #include "common/common_types.h"
@@ -16,6 +17,8 @@ struct UiRegion {
     float shade = 0;
 };
 UiRect UiLandscapeBounds(UiRect raw);
+size_t UiTextureSize(u32 format, u32 width, u32 height);
+std::string UiStatus();
 void ResetUi();
 bool IsUiArchivePath(std::string_view path);
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);

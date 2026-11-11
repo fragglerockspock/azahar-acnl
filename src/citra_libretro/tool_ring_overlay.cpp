@@ -9,6 +9,7 @@
 #include "citra_libretro/environment.h"
 #include "common/settings.h"
 #include "core/leaf_acnl/tool_ring.h"
+#include "core/leaf_acnl/ui.h"
 #ifdef ENABLE_OPENGL
 #include <glad/glad.h>
 #endif
@@ -97,7 +98,7 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             }
         }
     }
-    if (tools.empty()) {
+    {
         constexpr std::array<std::array<u8,5>,26> glyphs{{
             {{0x7e,0x11,0x11,0x11,0x7e}},{{0x7f,0x49,0x49,0x49,0x36}},{{0x3e,0x41,0x41,0x41,0x22}},
             {{0x7f,0x41,0x41,0x22,0x1c}},{{0x7f,0x49,0x49,0x49,0x41}},{{0x7f,0x09,0x09,0x09,0x01}},
@@ -109,16 +110,30 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             {{0x1f,0x20,0x40,0x20,0x1f}},{{0x3f,0x40,0x38,0x40,0x3f}},{{0x63,0x14,0x08,0x14,0x63}},
             {{0x07,0x08,0x70,0x08,0x07}},{{0x61,0x51,0x49,0x45,0x43}}
         }};
-        const auto message=LeafACNL::ToolRingStatus();
-        const int scale=std::max(1,std::min(2,(w-24)/std::max(1,static_cast<int>(message.size())*6)));
-        const int left=(w-static_cast<int>(message.size())*6*scale)/2;
-        for(size_t i=0;i<message.size();++i) {
-            if(message[i]<'A'||message[i]>'Z')continue;
-            const auto& glyph=glyphs[message[i]-'A'];
-            for(int x=0;x<5;++x)for(int y=0;y<7;++y)if(glyph[x]&(1<<y))
-                for(int sx=0;sx<scale;++sx)for(int sy=0;sy<scale;++sy)
-                    pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,h/2+y*scale+sy,{255,255,255,255});
+        constexpr std::array<std::array<u8,5>,10> digits{{
+            {{0x3e,0x51,0x49,0x45,0x3e}},{{0,0x42,0x7f,0x40,0}},
+            {{0x42,0x61,0x51,0x49,0x46}},{{0x21,0x41,0x45,0x4b,0x31}},
+            {{0x18,0x14,0x12,0x7f,0x10}},{{0x27,0x45,0x45,0x45,0x39}},
+            {{0x3c,0x4a,0x49,0x49,0x30}},{{1,0x71,9,5,3}},
+            {{0x36,0x49,0x49,0x49,0x36}},{{6,0x49,0x49,0x29,0x1e}}
+        }};
+        const auto text = [&](const std::string& message,int top,int scale) {
+            const int left=(w-static_cast<int>(message.size())*6*scale)/2;
+            for(size_t i=0;i<message.size();++i) {
+                const auto c=message[i];
+                if ((c<'A'||c>'Z') && (c<'0'||c>'9')) continue;
+                const auto& glyph = c>='0' && c<='9' ? digits[c-'0'] : glyphs[c-'A'];
+                for(int x=0;x<5;++x)for(int y=0;y<7;++y)if(glyph[x]&(1<<y))
+                    for(int sx=0;sx<scale;++sx)for(int sy=0;sy<scale;++sy)
+                        pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,top+y*scale+sy,{255,255,255,255});
+            }
+        };
+        if (tools.empty()) {
+            const auto message=LeafACNL::ToolRingStatus();
+            const int scale=std::max(1,std::min(2,(w-24)/std::max(1,static_cast<int>(message.size())*6)));
+            text(message,h/2,scale);
         }
+        text(LeafACNL::UiStatus(),8,1);
     }
     return {w,h,std::move(image)};
 }

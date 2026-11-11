@@ -1053,8 +1053,8 @@ void PicaCore::ProbeLeafUi(bool is_indexed) {
     if (texturing.main_config.texture0_enable &&
         static_cast<u32>(texturing.texture0_format.Value()) <= 13) {
         const auto& texture = texturing.texture0;
-        const size_t size = size_t{texture.width.Value()}*texture.height.Value()*
-                            TexturingRegs::NibblesPerPixel(texturing.texture0_format)/2;
+        const size_t size = LeafACNL::UiTextureSize(
+            static_cast<u32>(texturing.texture0_format.Value()),texture.width,texture.height);
         const PAddr address = texture.GetPhysicalAddress();
         const auto region = memory.GetPhysicalRef(address);
         if (size && size<=4*1024*1024 && region && size<=region.GetSize()) {

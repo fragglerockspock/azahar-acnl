@@ -58,6 +58,9 @@ int main(int argc,char** argv) {
     std::array<u8,64> native_key_fixture{};
     for(size_t i=0;i<native_key_fixture.size();++i)native_key_fixture[i]=i;
     assert(Key(native_key_fixture.data(),64,8,8)==0x618feb9889b0ed55ULL);
+    const std::array<size_t,14> expected_sizes{256,192,128,128,128,128,128,64,64,64,32,32,32,64};
+    for(u32 format=0;format<14;++format) assert(UiTextureSize(format,8,8)==expected_sizes[format]);
+    assert(UiTextureSize(14,8,8)==0 && UiTextureSize(12,0,8)==0);
     ResetUi();
     assert(!UiEnabled());
     assert(!IsUiArchivePath("Layout/ItemWin/item_icon.arc"));
@@ -71,6 +74,21 @@ int main(int argc,char** argv) {
     const auto choice=Register("Layout/selWin/slct_win.arc","my_slct_body.bclim",3);
     const auto map=Register("Layout/Menu/map_village.arc","tc_map_list_win_00.bclim",4);
     assert(tab==1 && hud==3 && choice==8 && map==(4|32));
+    assert(UiTextureSize(12,32,32)==512 && UiTextureSize(13,32,32)==1024);
+    for(u32 format:{12u,13u}) {
+        auto archive=Archive("my_men_tab_00.bclim",static_cast<u8>(20+format));
+        const size_t payload=UiTextureSize(format,8,8);
+        archive.resize(256+payload+40);
+        for(size_t i=0;i<payload;++i)archive[256+i]=static_cast<u8>(i+format);
+        std::memcpy(archive.data()+256+payload,"CLIM",4);
+        std::memcpy(archive.data()+256+payload+20,"imag",4);
+        const u32 dims=8|(8<<16), length=static_cast<u32>(payload), size=length+40;
+        std::memcpy(archive.data()+48,&size,4);
+        std::memcpy(archive.data()+256+payload+28,&dims,4);
+        std::memcpy(archive.data()+256+payload+36,&length,4);
+        RegisterUiArchive("Layout/Menu/menu_tab.arc",archive);
+        assert(UiTexture(archive.data()+256,UiTextureSize(format,8,8),8,8)==1);
+    }
     UiDraw(100,tab);
     UiTransfer(100,200);
     FinishUiFrame(200);
@@ -133,6 +151,13 @@ int main(int argc,char** argv) {
     UiTransfer(999,200);
     FinishUiFrame(200);
     assert(UiRegions(522,240).empty());
+    UiDraw(300,tab);
+    FinishUiFrame(900);
+    assert(UiRegions(522,240).size()==1);
+    UiDraw(300,0);
+    FinishUiFrame(900);
+    assert(UiRegions(522,240).empty());
+    assert(UiStatus().find("UI FIX 2 REG ")==0);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {
