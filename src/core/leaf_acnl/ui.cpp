@@ -32,7 +32,7 @@ std::unordered_map<u32,BottomBuffer> bottom_buffers;
 Frame last_completed;
 bool have_completed=false;
 Frame displayed;
-u64 draw_count = 0, match_count = 0, transfer_count = 0;
+u64 draw_count = 0, match_count = 0, transfer_count = 0, copy_count = 0, present_count = 0;
 void Union(UiRect& a, UiRect b) {
     if (!b.Valid()) return;
     if (!a.Valid()) { a = b; return; }
@@ -91,8 +91,9 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 void SetUiGpuReady(bool ready) { gpu_ready=ready ? 1 : 0; }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 5 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 6 REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
+           " C "+std::to_string(copy_count)+" S "+std::to_string(present_count)+
            " TAG "+std::to_string(displayed.tags)+" GPU "+
            (gpu_ready.load()<0 ? "NA" : (gpu_ready.load() ? "OK" : "OFF"));
 }
@@ -108,7 +109,7 @@ void ResetUi() {
     bottom_buffers.clear();
     last_completed = {};
     have_completed = false;
-    draw_count = match_count = transfer_count = 0;
+    draw_count = match_count = transfer_count = copy_count = present_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
@@ -210,12 +211,44 @@ bool IsUiBottomTransfer(u32 width, u32 height, u32 scaling, u32 destination,
         (bottom_second && destination==bottom_second)) return true;
     const u32 output_width=scaling ? width/2 : width;
     const u32 output_height=scaling==2 ? height/2 : height;
-    return output_width==240 && output_height==320;
+    const auto native_bottom=[](u32 w,u32 h) { return h==320 || (w==320 && h<=256); };
+    return native_bottom(width,height) || native_bottom(output_width,output_height);
+}
+void UiCopy(u32 source, u32 destination, bool texture_copy) {
+    if (!UiEnabled() || !source || !destination) return;
+    std::lock_guard lock(ui_mutex);
+    ++transfer_count;
+    if (texture_copy) ++copy_count;
+    const auto it=targets.find(source);
+    if (it==targets.end()) {
+        targets.erase(destination);
+        published.erase(destination);
+        return;
+    }
+    const Frame snapshot=it->second;
+    it->second.sealed=true;
+    targets[destination]=snapshot;
+    targets[destination].sealed=true;
+    published[destination]=snapshot;
+    if (snapshot.tags) {
+        last_completed=snapshot;
+        have_completed=true;
+    }
+}
+void UiPresent(u32 bottom) {
+    if (!UiEnabled() || !bottom) return;
+    std::lock_guard lock(ui_mutex);
+    ++present_count;
+    const auto it=targets.find(bottom);
+    if (it==targets.end()) return;
+    published[bottom]=it->second;
+    last_completed=it->second;
+    have_completed=true;
+    it->second.sealed=true;
 }
 void UiTransfer(u32 source, u32 destination, u32 width, u32 height) {
     if (!UiEnabled() || width!=240 || height!=320) return;
     std::lock_guard lock(ui_mutex);
-    ++transfer_count;
     auto& frame=targets[source];
     published[destination]=frame;
     last_completed=frame;

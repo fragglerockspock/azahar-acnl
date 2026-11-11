@@ -336,6 +336,11 @@ void GPU::SetBufferSwap(u32 screen_id, const Service::GSP::FrameBufferInfo& info
     framebuffer.format = (framebuffer.format & 0xFFFF0000) | (info.format & 0xFFFF);
     framebuffer.active_fb = info.shown_fb & 0xFF;
 
+    if (screen_id==1) {
+        LeafACNL::UiPresent(framebuffer.active_fb==0 ? framebuffer.address_left1 :
+                                                     framebuffer.address_left2);
+    }
+
     // Notify debugger about the buffer swap.
     if (impl->debug_context) {
         impl->debug_context->OnEvent(Pica::DebugContext::Event::BufferSwapped, nullptr);
@@ -560,6 +565,8 @@ void GPU::MemoryTransfer() {
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
 
+    LeafACNL::UiCopy(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress(),
+                     config.is_texture_copy.Value()!=0);
     const auto& leaf_bottom=impl->pica.regs.framebuffer_config[1];
     if (!config.is_texture_copy && LeafACNL::IsUiBottomTransfer(
             config.output_width,config.output_height,static_cast<u32>(config.scaling.Value()),
