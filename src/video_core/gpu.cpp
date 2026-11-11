@@ -560,7 +560,7 @@ void GPU::MemoryTransfer() {
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
 
-    const auto& leaf_bottom=regs.framebuffer_config[1];
+    const auto& leaf_bottom=impl->pica.regs.framebuffer_config[1];
     if (!config.is_texture_copy && LeafACNL::IsUiBottomTransfer(
             config.output_width,config.output_height,static_cast<u32>(config.scaling.Value()),
             config.GetPhysicalOutputAddress(),leaf_bottom.address_left1,leaf_bottom.address_left2)) {
