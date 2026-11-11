@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@ struct UiRegion {
     UiRect source;
     UiRect destination;
     float shade = 0;
+    float opacity = 1;
 };
 UiRect UiLandscapeBounds(UiRect raw);
 size_t UiTextureSize(u32 format, u32 width, u32 height);
@@ -25,7 +27,10 @@ void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
 bool UiEnabled();
 u32 UiTexture(const u8* data, size_t size, u32 width, u32 height);
 void UiDraw(u32 target, u32 tags, UiRect bounds = {});
-void UiTransfer(u32 source, u32 destination);
+void UiTransfer(u32 source, u32 destination, u32 width = 240, u32 height = 320);
+void UiRememberBottom(u32 source, size_t size, u32 format);
+bool UiKeyFill(u32 start, u32 end, u32& value, u32& control);
+std::array<float,4> UiKeyPixel(float r, float g, float b, float threshold = .06f, float softness = .08f);
 void FinishUiFrame(u32 bottom);
 std::vector<UiRegion> UiRegions(float width, float height);
 bool UiTouch(float x, float y, float width, float height, float& touch_x, float& touch_y);

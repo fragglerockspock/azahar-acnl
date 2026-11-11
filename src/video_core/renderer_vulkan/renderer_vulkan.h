@@ -62,8 +62,9 @@ struct PresentUniformData {
     int screen_id_r = 0;
     int layer = 0;
     int reverse_interlaced = 0;
+    Common::Vec4f leaf_params{1,0,0,0};
 };
-static_assert(sizeof(PresentUniformData) == 112,
+static_assert(sizeof(PresentUniformData) == 128,
               "PresentUniformData does not structure in shader!");
 
 class RendererVulkan : public VideoCore::RendererBase {
@@ -157,6 +158,8 @@ private:
 #ifdef HAVE_LIBRETRO
     vk::Pipeline tool_ring_pipeline{};
     vk::ShaderModule tool_ring_vertex_shader{},tool_ring_fragment_shader{};
+    vk::ShaderModule leaf_ui_shader{};
+    vk::Pipeline leaf_ui_pipeline{};
     std::unique_ptr<StreamBuffer> tool_ring_buffer;
 #endif
     vk::UniquePipelineLayout cursor_pipeline_layout{};

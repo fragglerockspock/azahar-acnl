@@ -18,6 +18,7 @@
 
 #include "video_core/host_shaders/vulkan_present_anaglyph_frag.h"
 #include "video_core/host_shaders/vulkan_present_frag.h"
+#include "video_core/host_shaders/vulkan_leaf_ui_frag.h"
 #include "video_core/host_shaders/vulkan_present_interlaced_frag.h"
 #include "video_core/host_shaders/vulkan_present_vert.h"
 
@@ -168,6 +169,8 @@ RendererVulkan::~RendererVulkan() {
     device.destroyPipeline(cursor_pipeline);
 #ifdef HAVE_LIBRETRO
     device.destroyPipeline(tool_ring_pipeline);
+    device.destroyPipeline(leaf_ui_pipeline);
+    device.destroyShaderModule(leaf_ui_shader);
     device.destroyShaderModule(tool_ring_vertex_shader);
     device.destroyShaderModule(tool_ring_fragment_shader);
 #endif
@@ -321,6 +324,7 @@ void RendererVulkan::CompileShaders() {
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
 
 #ifdef HAVE_LIBRETRO
+    leaf_ui_shader=Compile(HostShaders::VULKAN_LEAF_UI_FRAG,vk::ShaderStageFlagBits::eFragment,device,preamble);
     tool_ring_vertex_shader=Compile(HostShaders::VULKAN_TOOL_RING_VERT,vk::ShaderStageFlagBits::eVertex,device);
     tool_ring_fragment_shader=Compile(HostShaders::VULKAN_TOOL_RING_FRAG,vk::ShaderStageFlagBits::eFragment,device);
 #endif
@@ -501,6 +505,25 @@ void RendererVulkan::BuildPipelines() {
             instance.GetDevice().createGraphicsPipeline({}, pipeline_info);
         ASSERT_MSG(result == vk::Result::eSuccess, "Unable to build present pipelines");
         present_pipelines[i] = pipeline;
+#ifdef HAVE_LIBRETRO
+        if (i==0) {
+            auto leaf_stages=shader_stages;
+            leaf_stages[1].module=leaf_ui_shader;
+            auto leaf_attachment=colorblend_attachment;
+            leaf_attachment.srcColorBlendFactor=vk::BlendFactor::eSrcAlpha;
+            leaf_attachment.dstColorBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            leaf_attachment.srcAlphaBlendFactor=vk::BlendFactor::eOne;
+            leaf_attachment.dstAlphaBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            auto leaf_blending=color_blending;
+            leaf_blending.pAttachments=&leaf_attachment;
+            auto leaf_info=pipeline_info;
+            leaf_info.pStages=leaf_stages.data();
+            leaf_info.pColorBlendState=&leaf_blending;
+            const auto [leaf_result,leaf_pipeline]=instance.GetDevice().createGraphicsPipeline({},leaf_info);
+            ASSERT_MSG(leaf_result==vk::Result::eSuccess,"Unable to build Leaf keyed UI pipeline");
+            leaf_ui_pipeline=leaf_pipeline;
+        }
+#endif
     }
 
     // Build cursor pipeline (simple position-only, inverted color blending)
@@ -1125,9 +1148,10 @@ void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
                 cmdbuf.draw(6,1,0,0);
             });
         }
-        scheduler.Record([this,index=current_pipeline](vk::CommandBuffer cmdbuf) {
-            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,present_pipelines[index]);
+        scheduler.Record([this](vk::CommandBuffer cmdbuf) {
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,leaf_ui_pipeline);
         });
+        draw_info.leaf_params={region.opacity,.06f,.08f,0};
         const auto original = screen_infos[2].texcoords;
         auto& tex = screen_infos[2].texcoords;
         const float tw = original.right-original.left;
@@ -1140,6 +1164,7 @@ void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
         DrawSingleScreen(2,dst.left,dst.top,dst.right-dst.left,dst.bottom-dst.top,
                          Layout::DisplayOrientation::Landscape);
         tex = original;
+        draw_info.leaf_params={1,0,0,0};
     }
 }
 

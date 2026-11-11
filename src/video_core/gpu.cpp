@@ -498,9 +498,10 @@ void GPU::MemoryFill(u32 index, u32 intr_index) {
         return;
     }
 
-    // Perform memory fill.
-    if (!impl->rasterizer->AccelerateFill(config)) {
-        impl->sw_blitter->MemoryFill(config);
+    auto keyed=config;
+    LeafACNL::UiKeyFill(keyed.GetStartAddress(),keyed.GetEndAddress(),keyed.value_32bit,keyed.control);
+    if (!impl->rasterizer->AccelerateFill(keyed)) {
+        impl->sw_blitter->MemoryFill(keyed);
     }
 
     // Treat fill as texture transfer from VRAM
@@ -559,7 +560,19 @@ void GPU::MemoryTransfer() {
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
 
-    LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress());
+    if (!config.is_texture_copy && config.output_width==240 && config.output_height==320) {
+        const auto source=config.GetPhysicalInputAddress();
+        const size_t size=size_t{config.input_width.Value()}*config.input_height.Value()*BytesPerPixel(config.input_format);
+        LeafACNL::UiRememberBottom(source,size,static_cast<u32>(config.input_format.Value()));
+        LeafACNL::UiTransfer(source,config.GetPhysicalOutputAddress(),config.output_width,config.output_height);
+        Pica::MemoryFillConfig clear{};
+        clear.address_start=source/8;
+        clear.address_end=(source+static_cast<u32>(size))/8;
+        clear.control=1;
+        if (LeafACNL::UiKeyFill(clear.GetStartAddress(),clear.GetEndAddress(),clear.value_32bit,clear.control)) {
+            if (!impl->rasterizer->AccelerateFill(clear)) impl->sw_blitter->MemoryFill(clear);
+        }
+    }
 
     // Complete transfer.
     config.trigger.Assign(0);
