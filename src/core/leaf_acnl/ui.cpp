@@ -13,7 +13,7 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
@@ -29,7 +29,7 @@ std::unordered_map<u32, Frame> targets;
 struct TargetInfo {
     u32 width=0,height=0,format=0,view_width=0,view_height=0;
     size_t size=0,key_size=0;
-    bool bottom=false,top_seen=false;
+    bool bottom=false;
 };
 std::unordered_map<u32,TargetInfo> target_info;
 std::unordered_map<u32,Frame> completed;
@@ -37,6 +37,8 @@ Frame last_completed,observed_pending,observed_completed;
 TargetInfo observed_info;
 bool have_completed=false;
 std::atomic_bool alpha_ready{false};
+struct ClearPhase { bool active=false; u32 source=0,end=0,format=0,backdrop=0; };
+ClearPhase clear_phase;
 u64 key_count=0,event_sequence=0;
 Frame displayed;
 u64 draw_count = 0, match_count = 0, transfer_count = 0;
@@ -56,6 +58,10 @@ u32 Tags(std::string_view name) {
         if (name.find(prefix) == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Map;
     }
     if (name.find("selWin/slct_win.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Choice;
+    if (name.find("selWin/cmn_slct_win.arc:my_csw")==0 ||
+        name.find("Title/opng_titl.arc:my_csw")==0) tags |= TitleMenu;
+    if (name=="Title/opng_titl.arc:my_opn_bg_01.bclim") tags |= TitleBackdrop;
+    if (name=="selWin/cmn_slct_win.arc:im_cmn_arrow32_00.bclim") tags |= TitleArrow;
     if (name == "common/cmn_btn.arc:my_cbn_btn.bclim") tags |= MapControl;
     if ((tags&Map) && (name.find(":tc_map_list_win") != std::string_view::npos ||
                        name.find(":tc_map_listwin_arrow.bclim") != std::string_view::npos))
@@ -98,7 +104,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2T REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2U REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
            " A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -116,6 +122,7 @@ void ResetUi() {
     completed.clear();
     last_completed=observed_pending=observed_completed={};
     observed_info={};
+    clear_phase={};
     have_completed=false;
     key_count=event_sequence=0;
     draw_count = match_count = transfer_count = 0;
@@ -125,6 +132,7 @@ bool IsUiArchivePath(std::string_view path) {
     if (pos == std::string_view::npos) return false;
     path.remove_prefix(pos+7);
     return path == "Menu/menu_tab.arc" || path == "selWin/slct_win.arc" ||
+           path == "selWin/cmn_slct_win.arc" || path == "Title/opng_titl.arc" ||
            path == "common/cmn_btn.arc" ||
            (path.find("Menu/map_") == 0 && path.size() > 4 && path.substr(path.size()-4) == ".arc");
 }
@@ -188,7 +196,9 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     const u32 h=info.view_height ? info.view_height : info.height;
     const bool bottom_shape=!w || ((w==240 || w==256) && h==320) ||
         (w==320 && h>=240 && h<=256);
-    if (bottom_shape && (tags&(Tab|Map|Choice))) info.bottom=true;
+    const u32 combined=frame.tags|tags;
+    const bool title_pair=(combined&TitleBackdrop) && (combined&TitleArrow);
+    if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu)) || title_pair)) info.bottom=true;
     frame.tags |= tags;
     ++draw_count;
     frame.sequence = ++event_sequence;
@@ -197,7 +207,7 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (tags&HudMap) Union(frame.map,bounds);
     const bool top_view=(info.view_width==400 && info.view_height==240) ||
                         (info.view_width==240 && info.view_height==400);
-    if ((tags&(Tab|Map|Choice)) && !top_view) {
+    if (((tags&(Tab|Map|Choice|TitleMenu)) || title_pair) && !top_view) {
         observed_pending=frame;
         observed_info=info;
     }
@@ -216,7 +226,6 @@ void UiTarget(u32 address, u32 width, u32 height, u32 format, u32 view_width, u3
                            (view_width==320 && view_height>=240 && view_height<=256);
     if (view_width && view_height && !bottom_view) info.bottom=false;
     if ((view_width==400 && view_height==240) || (view_width==240 && view_height==400)) {
-        info.top_seen=true;
         info.bottom=false;
     }
     constexpr std::array<u32,5> bytes{4,3,2,2,2};
@@ -235,39 +244,59 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     const auto it=target_info.find(start);
     if (it==target_info.end() || !it->second.size ||
         (u64{end}!=u64{start}+it->second.size &&
-         (!it->second.key_size || u64{end}!=u64{start}+it->second.key_size))) return false;
+         (!it->second.key_size || u64{end}!=u64{start}+it->second.key_size) &&
+         (!clear_phase.active || start!=clear_phase.source || end!=clear_phase.end))) return false;
     targets[start]={};
     targets[start].sequence=++event_sequence;
-    if (!alpha_ready || !it->second.bottom || it->second.top_seen) return false;
+    if (!alpha_ready || !clear_phase.active || start!=clear_phase.source || end>clear_phase.end)
+        return false;
+    targets[start].tags=clear_phase.backdrop;
     control &= ~0x300u;
-    switch(it->second.format) {
+    switch(clear_phase.format) {
     case 0: value=0xff00ffff;control|=0x200;break;
     case 1: value=(value&0xff000000)|0xff00ff;control|=0x100;break;
-    case 2: value=(value&0xffff0000)|0xf83f;break;
-    case 3: value=(value&0xffff0000)|0xf81f;break;
+    case 2: value=(value&0xffff0000)|0xf81f;break;
+    case 3: value=(value&0xffff0000)|0xf83f;break;
     case 4: value=(value&0xffff0000)|0xf0ff;break;
     default:return false;
     }
     ++key_count;
     return true;
 }
-bool UiTransferClear(u32 source,u32 destination,u32 width,u32 height,u32 format,
-                     u32& end,u32& value,u32& control) {
-    if (!UiEnabled() || !alpha_ready || !source || !destination || format>4) return false;
+bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
+                            u32 output_width,u32 output_height,u32 format,
+                            u32& end,u32& value,u32& control) {
+    if (!UiEnabled() || !source || !destination || format>4) return false;
     {
         std::lock_guard lock(ui_mutex);
+        const bool bottom_copy=output_height==320 || (output_width==320 && output_height<=256);
         const auto it=target_info.find(source);
-        if (it==target_info.end()) return false;
-        auto& info=it->second;
         constexpr std::array<u32,5> pica_format{0,1,3,2,4},pixel_bytes{4,3,2,2,2};
-        if (!info.bottom || info.top_seen || !info.size || info.format!=pica_format[format] ||
-            width!=info.width || !height || height>info.height ||
-            height<(info.view_height ? info.view_height : info.height)) return false;
+        if (bottom_copy) {
+            if (it!=target_info.end() && source==clear_phase.source && width==it->second.width &&
+                height<=it->second.height && it->second.format==pica_format[format]) {
+                auto snapshot=targets[source];
+                if (!snapshot.sequence) snapshot.sequence=++event_sequence;
+                completed[destination]=snapshot;
+                last_completed=snapshot;have_completed=true;
+                const u64 copied=u64{width}*height*pixel_bytes[format];
+                if (copied<=it->second.size)it->second.key_size=static_cast<size_t>(copied);
+            }
+            clear_phase.active=false;
+            return false;
+        }
+        if (it==target_info.end() || !output_width || !output_height) return false;
+        auto& info=it->second;
+        const bool top_view=(info.view_width==240 && info.view_height==400) ||
+                            (info.view_width==400 && info.view_height==240);
+        if (!alpha_ready || !top_view || !info.size || info.format!=pica_format[format] ||
+            width!=info.width || !height || height>info.height || height<info.view_height) return false;
         const u64 span=u64{width}*height*pixel_bytes[format];
         if (span>info.size || span>UINT32_MAX-source || span%8 ||
             (u64{destination}<u64{source}+span && u64{destination}+u64{width}*height*4>source)) return false;
-        info.key_size=static_cast<size_t>(span);
-        end=source+static_cast<u32>(span);
+        const u32 backdrop=targets[source].tags&TitleBackdrop;
+        clear_phase={true,source,source+static_cast<u32>(span),format,backdrop};
+        end=clear_phase.end;
     }
     return UiPrepareFill(source,end,value,control);
 }
@@ -342,6 +371,8 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         const auto source = displayed.choice.Valid() ? Crop(displayed.choice,3) : UiRect{40,1,280,216};
         return {Region(source,width,height,.965f,.54f,1,1,.8f)};
     }
+    if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))
+        return {Region({20,20,300,220},width,height,.5f,.55f,.5f,.5f,.85f)};
     if ((tags&Map) && (tags&MapControl))
         return {Region({63,17,258,201},width,height,.97f,.03f,.5f,0,.5f,-64,0),
                 Region({196,204,320,240},width,height,.97f,.03f,1,0,.5f,0,96),
@@ -349,9 +380,13 @@ std::vector<UiRegion> UiRegions(float width, float height) {
     if ((tags&Map) && !(tags&Tab))
         return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.5f)};
     if ((tags&Tab) && !(tags&HudButton)) {
-        auto region = Region({0,1,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
-        region.shade = .45f;
-        return {region};
+        auto body=Region({0,0,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
+        const float factor=(body.destination.bottom-body.destination.top)/240;
+        body.source.top=25;
+        body.destination.top+=std::round(25*factor);
+        body.shade=.45f;
+        return {body,Region({0,0,210,25},width,height,0,0,0,0,1,4,0),
+                     Region({210,0,320,25},width,height,1,0,1,0,1,-4,0)};
     }
     if ((tags&Tab) && (tags&HudButton)) {
         std::vector<UiRegion> regions{Region({0,0,210,25},width,height,0,0,0,0,1,4,0)};

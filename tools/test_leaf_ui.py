@@ -1,4 +1,5 @@
 from pathlib import Path
+from zipfile import ZipFile
 import os
 import shutil
 import subprocess
@@ -98,11 +99,11 @@ int main(int argc,char** argv) {
     UiTransfer(100,200);
     FinishUiFrame(200);
     auto regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].shade==.45f);
-    assert(regions[0].destination.left==100 && regions[0].destination.right==422);
+    assert(regions.size()==3 && regions[0].shade==.45f);
+    assert(regions[0].destination.left==101 && regions[0].destination.right==421);
     float tx=0,ty=0;
     assert(UiTouch(261,120,522,240,tx,ty));
-    assert(std::abs(tx-.5f)<.0001f && std::abs(ty-120.5f/240)<.0001f);
+    assert(std::abs(tx-.5f)<.0001f && std::abs(ty-120.0f/240)<.0001f);
     assert(!UiTouch(0,120,522,240,tx,ty));
     const size_t pitch=522*4+16;
     std::vector<u8> output(pitch*240,200), bottom(320*240*4);
@@ -112,7 +113,7 @@ int main(int argc,char** argv) {
     assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==200);
     assert(output[522*4]==200);
     for(int frame=0;frame<180;++frame) FinishUiFrame(200);
-    assert(UiRegions(522,240).size()==1);
+    assert(UiRegions(522,240).size()==3);
     UiDraw(100,hud);
     UiTransfer(100,201);
     FinishUiFrame(201);
@@ -161,13 +162,13 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).size()==3);
     UiCommandComplete();
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
     UiTransfer(300,901);
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,hud);
     for(int frame=0;frame<180;++frame) FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,map,{64,26,280,214});
     UiTransfer(300,902);
     FinishUiFrame(902);
@@ -194,29 +195,63 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).empty());
     SetUiAlphaReady(true);
     const std::array<u32,5> key_values{0xff00ffff,0xff00ff,0xf83f,0xf81f,0xf0ff};
-    const std::array<u32,5> pixel_bytes{4,3,2,2,2};
+    const std::array<u32,5> pixel_bytes{4,3,2,2,2},pica_to_gpu{0,1,3,2,4};
+    u32 value=123,control=0,copy_end=0;
     for(u32 format=0;format<5;++format) {
-        const u32 address=0x100000+format*0x100000,end=address+320*240*pixel_bytes[format];
-        UiTarget(address,320,240,format);
-        UiDraw(address,tab);
-        u32 value=0,control=0x80000000;
+        const u32 address=0x100000+format*0x100000,end=address+256*416*pixel_bytes[format];
+        UiTarget(address,256,416,format,240,400);UiDraw(address,0);
+        value=123;control=0;
+        assert(!UiPrepareFill(address,end,value,control) && value==123 && control==0);
+        assert(!UiAfterDisplayTransfer(address,address+8,256,416,240,400,pica_to_gpu[format],copy_end,value,control));
+        assert(value==123 && control==0);
+        UiTransfer(address,0x3000000);
+        assert(UiAfterDisplayTransfer(address,0x3000000,256,416,240,400,pica_to_gpu[format],copy_end,value,control));
+        assert(copy_end==end && value==key_values[format]);
+        UiTarget(address,256,416,format,240,320);UiDraw(address,tab);
+        value=0;control=0x80000000;
         assert(!UiPrepareFill(address+8,end,value,control));
-        assert(value==0 && control==0x80000000);
         assert(!UiPrepareFill(address,end-8,value,control));
         assert(!UiPrepareFill(address,end+8,value,control));
-        assert(UiPrepareFill(address,end,value,control));
-        assert(value==key_values[format]);
-        assert((control&0x300)==(format==0 ? 0x200u : format==1 ? 0x100u : 0u));
-        for(const auto shape:std::array<std::array<u32,2>,3>{{{400,240},{240,400},{256,512}}}) {
-            UiTarget(address,shape[0],shape[1],format);
-            UiDraw(address,tab);
-            value=123;control=0x80000000;
-            assert(!UiPrepareFill(address,address+shape[0]*shape[1]*pixel_bytes[format],value,control));
-            assert(value==123 && control==0x80000000);
-        }
+        assert(UiPrepareFill(address,end,value,control) && value==key_values[format]);
+        UiDraw(address,hud);UiCommandComplete();UiTransfer(address,0x3100000);
+        assert(!UiAfterDisplayTransfer(address,0x3100000,256,320,240,320,pica_to_gpu[format],copy_end,value,control));
+        value=123;control=0;
+        assert(!UiPrepareFill(address,end,value,control) && value==123 && control==0);
+        UiTarget(address,256,416,format,240,400);UiDraw(address,0);
+        assert(UiAfterDisplayTransfer(address,0x3000000,256,416,240,400,pica_to_gpu[format],copy_end,value,control));
+        const u32 bottom_end=address+256*320*pixel_bytes[format];
+        assert(UiPrepareFill(address,bottom_end,value,control) && value==key_values[format]);
+        assert(!UiAfterDisplayTransfer(address,0x3100000,256,320,240,320,pica_to_gpu[format],copy_end,value,control));
     }
-    u32 value=123,control=0;
+    value=123;control=0;
     assert(!UiPrepareFill(0x900000,0xa00000,value,control) && value==123 && control==0);
+    const u32 scratch=0x4000000,top_lcd=0x4200000,bottom_lcd=0x4300000;
+    std::vector<u32> shared_pixels(256*416,0x305070ff);
+    shared_pixels[100]=0xff0000ff;
+    const auto saved_top=shared_pixels;
+    UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,0);UiTransfer(scratch,top_lcd);
+    assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+    std::fill(shared_pixels.begin(),shared_pixels.end(),value);
+    assert(saved_top[100]==0xff0000ff && shared_pixels[100]==0xff00ffff);
+    const u32 blank_pixel=shared_pixels[100];
+    assert(UiKeyPixel((blank_pixel>>24)/255.0f,((blank_pixel>>16)&255)/255.0f,((blank_pixel>>8)&255)/255.0f)[3]==0);
+    shared_pixels[200]=0x00ff00ff;
+    UiTarget(scratch,256,416,0,240,320);UiDraw(scratch,choice,{40,1,280,216});UiCommandComplete();
+    const auto saved_bottom=shared_pixels;
+    UiTransfer(scratch,bottom_lcd);
+    assert(!UiAfterDisplayTransfer(scratch,bottom_lcd,256,320,240,320,0,copy_end,value,control));
+    FinishUiFrame(bottom_lcd);assert(displayed.tags==choice);
+    assert(saved_bottom[100]==0xff00ffff && saved_bottom[200]==0x00ff00ff);
+    value=0;control=0;
+    assert(!UiPrepareFill(scratch,scratch+256*416*4,value,control) && value==0);
+    std::fill(shared_pixels.begin(),shared_pixels.end(),0x305070ff);
+    UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,0);UiTransfer(scratch,top_lcd);
+    assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+    std::fill(shared_pixels.begin(),shared_pixels.end(),value);
+    UiTransfer(scratch,bottom_lcd);
+    assert(!UiAfterDisplayTransfer(scratch,bottom_lcd,256,320,240,320,0,copy_end,value,control));
+    for(int frame=0;frame<180;++frame)FinishUiFrame(0x4500000);
+    assert(UiRegions(522,240).empty());
     const auto transparent=UiKeyPixel(1,0,1),white=UiKeyPixel(1,1,1),black=UiKeyPixel(0,0,0);
     assert(transparent[3]==0 && white[3]==1 && black[3]==1);
     const auto edge=UiKeyPixel(1,.5f,1);
@@ -247,6 +282,8 @@ int main(int argc,char** argv) {
     SetUiAlphaReady(true);
 
     const u32 padded=0x1100000,padded_end=padded+256*512*4,lcd=0x1200000;
+    UiTarget(padded,256,512,0,240,400);UiDraw(padded,0);
+    assert(UiAfterDisplayTransfer(padded,0x3000000,256,512,240,400,0,copy_end,value,control));
     UiTarget(padded,256,512,0,240,320);
     UiDraw(padded,hud|map,{64,26,280,214});
     UiCommandComplete();
@@ -271,6 +308,7 @@ int main(int argc,char** argv) {
     }
     assert(displayed.tags==choice);
     UiTransfer(padded,lcd);
+    assert(!UiAfterDisplayTransfer(padded,lcd,256,320,240,320,0,copy_end,value,control));
     FinishUiFrame(lcd);
     assert(UiRegions(522,240).empty());
     const u32 shared=0x1400000,shared_end=shared+256*512*4;
@@ -284,35 +322,30 @@ int main(int argc,char** argv) {
     UiTarget(shared,256,512,0,240,320);
     UiDraw(shared,tab);
     assert(!UiPrepareFill(shared,shared_end,value,control) && value==123 && control==0);
-    const u32 copied=0x1500000,copied_dest=0x1700000;
-    UiTarget(copied,256,512,0,240,320);UiDraw(copied,hud);
-    UiCommandComplete();
-    u32 copy_end=0;
-    value=123;control=0;
-    assert(!UiTransferClear(copied,copied+8,256,320,0,copy_end,value,control));
-    assert(value==123 && control==0);
-    assert(!UiTransferClear(copied,copied_dest,240,320,0,copy_end,value,control));
-    assert(!UiTransferClear(copied,copied_dest,256,240,0,copy_end,value,control));
-    assert(!UiTransferClear(copied,copied_dest,256,320,1,copy_end,value,control));
-    assert(UiTransferClear(copied,copied_dest,256,320,0,copy_end,value,control));
-    assert(copy_end==copied+256*320*4 && value==0xff00ffff);
-    FinishUiFrame(0x1800000);assert(displayed.tags==hud);
-    value=123;control=0;
-    assert(UiPrepareFill(copied,copy_end,value,control) && value==0xff00ffff);
-    UiTarget(copied,256,512,0,240,400);UiDraw(copied,0);
-    value=123;control=0;
-    assert(!UiTransferClear(copied,copied_dest,256,400,0,copy_end,value,control));
-    assert(value==123 && control==0);
-    const std::array<u32,5> gpu_to_pica{0,1,3,2,4};
-    const std::array<u32,5> transfer_keys{0xff00ffff,0xff00ff,0xf81f,0xf83f,0xf0ff};
-    for(u32 format=0;format<5;++format) {
-        const u32 address=0x1900000+format*0x100000;
-        UiTarget(address,256,512,gpu_to_pica[format],240,320);UiDraw(address,hud);
-        value=0;control=0;
-        assert(UiTransferClear(address,0x2000000,256,320,format,copy_end,value,control));
-        assert(value==transfer_keys[format]);
-    }
-    assert(UiStatus().find("UI FIX 2T REG ")==0);
+    UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,0);
+    assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+    assert(!UiAfterDisplayTransfer(0x4900000,bottom_lcd,256,320,240,320,0,copy_end,value,control));
+    value=0;control=0;
+    assert(!UiPrepareFill(scratch,scratch+256*416*4,value,control) && value==0 && control==0);
+    const auto title=Register("Layout/selWin/cmn_slct_win.arc","my_csw_LT.bclim",121);
+    assert(title==64 && Tags("selWin/cmn_slct_win.arc:im_cmn_arrow32_00.bclim")==256);
+    UiDraw(0x1500000,title);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
+    assert(UiRegions(522,240).size()==1);
+    check_rect(UiRegions(522,240)[0].destination,{142,47,380,217});
+    UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,128);UiTransfer(scratch,top_lcd);
+    assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+    UiTarget(scratch,256,416,0,240,320);UiDraw(scratch,256);UiCommandComplete();
+    UiTransfer(scratch,bottom_lcd);
+    assert(!UiAfterDisplayTransfer(scratch,bottom_lcd,256,320,240,320,0,copy_end,value,control));
+    FinishUiFrame(bottom_lcd);
+    check_rect(UiRegions(522,240)[0].destination,{142,47,380,217});
+    UiDraw(0x1500000,tab);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
+    const auto inventory=UiRegions(522,240);
+    assert(inventory.size()==3 && inventory[0].source.top==25);
+    check_rect(inventory[1].destination,{4,0,214,25});
+    check_rect(inventory[2].destination,{408,0,518,25});
+    assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
+    assert(UiStatus().find("UI FIX 2U REG ")==0);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {
@@ -324,6 +357,15 @@ int main(int argc,char** argv) {
         for(const auto& entry:textures) found_hud |= (entry.second&HudButton)!=0;
         assert(found_hud);
     }
+    if(argc>2) {
+        std::ifstream file(argv[2],std::ios::binary);
+        std::vector<u8> bytes{std::istreambuf_iterator<char>(file),{}};
+        RegisterUiArchive("Layout/selWin/cmn_slct_win.arc",bytes);
+        size_t title_keys=0;
+        for(const auto& entry:textures)title_keys+=(entry.second&TitleMenu)!=0;
+        assert(title_keys>=1);
+        std::cout<<"Supplied title-menu texture keys passed\n";
+    }
     std::cout << "Leaf UI registry, scene routing, transfers, crops and software composition passed\n";
 }
 ''')
@@ -332,7 +374,13 @@ try:
                     "-I"+str(temp), "-I"+str(root/"src"), "-I"+str(root/"externals/xxHash"),
                     str(temp/"test.cpp"), "-o", str(temp/"test")], check=True)
     arguments = [str(temp/"test")]
-    if os.environ.get("LEAF_MENU_TAB_ARCHIVE"):
+    if os.environ.get("LEAF_LAYOUT_ZIP"):
+        with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc"):
+                target = temp / Path(name).name
+                target.write_bytes(archive.read(name))
+                arguments.append(str(target))
+    elif os.environ.get("LEAF_MENU_TAB_ARCHIVE"):
         arguments.append(os.environ["LEAF_MENU_TAB_ARCHIVE"])
     subprocess.run(arguments, check=True)
 finally:
