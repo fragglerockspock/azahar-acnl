@@ -112,7 +112,8 @@ void LayeredFS::Load() {
                     continue;
                 }
                 const auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction)+
-                                     LeafACNL::PatchLeafPaneMasks(path,bytes);
+                                     LeafACNL::PatchLeafPaneMasks(path,bytes)+
+                                     LeafACNL::PatchLeafFade(path,bytes,correction);
                 if (changes != 0) {
                     file->relocation.type = 2;
                     file->relocation.patched_file = std::move(bytes);

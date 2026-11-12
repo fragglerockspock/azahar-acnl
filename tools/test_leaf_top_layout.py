@@ -49,12 +49,22 @@ int main(int argc,char** argv) {
     }
     for(const auto& example:std::vector<std::pair<const char*,const char*>>{
             {"Menu/menu_tab.arc","im_tab_05"},{"selWin/slct_win.arc","P_kuchi_00"},
-            {"Menu/mvmnt_undscrn.arc","P_base_00"}}) {
+            {"Menu/mvmnt_undscrn.arc","P_base_00"},{"ItemWin/item_scrn.arc","P_bg_C"}}) {
         auto bytes=Arc(std::string(example.first).find("mvmnt")!=std::string::npos ? 400 : 320,example.second);
         auto expected_mask=bytes;expected_mask[304]&=254;
         assert(LeafACNL::PatchLeafPaneMasks(example.first,bytes)==1 && bytes==expected_mask);
         assert(LeafACNL::PatchLeafPaneMasks(example.first,bytes)==0);
     }
+    auto fade=Arc(400,"P_fade_00");
+    std::memcpy(fade.data()+296,"pic1",4);
+    const float fade_width=400;std::memcpy(fade.data()+364,&fade_width,4);
+    const auto fade_before=fade;
+    assert(LeafACNL::PatchLeafFade("Layout/Wipe/fade.arc",fade,correction)==1);
+    float expanded=0;std::memcpy(&expanded,fade.data()+364,4);
+    assert(std::abs(expanded*correction-400)<.001f);
+    assert(LeafACNL::PatchLeafFade("Layout/Wipe/fade.arc",fade,correction)==0);
+    auto unrelated_fade=fade_before;
+    assert(LeafACNL::PatchLeafFade("Layout/msgWin/msg_win.arc",unrelated_fade,correction)==0 && unrelated_fade==fade_before);
     auto unrelated=Arc(400,"P_kuchi_00");const auto unrelated_before=unrelated;
     assert(LeafACNL::PatchLeafPaneMasks("selWin/slct_win.arc",unrelated)==0 && unrelated==unrelated_before);
     if(argc==2) {
@@ -86,10 +96,14 @@ int main(int argc,char** argv) {
             if(path=="Menu/menu_tab.arc")assert(mask_count==4);
             if(path=="selWin/slct_win.arc")assert(mask_count==2);
             if(path=="Menu/mvmnt_undscrn.arc")assert(mask_count==2);
+            if(path=="ItemWin/item_scrn.arc")assert(mask_count==3);
+            const auto fade_count=LeafACNL::PatchLeafFade("Layout/"+path,bytes,correction);
+            if(path=="Wipe/fade.arc")assert(fade_count==1);
+            else assert(fade_count==0);
             masks+=mask_count;
             ++scanned;changed+=count;
         }
-        assert(scanned>0 && changed>0 && masks==8);
+        assert(scanned>0 && changed>0 && masks==11);
         std::cout<<scanned<<" supplied archives checked; only "<<changed<<" top root scales changed\n";
     }
     std::cout<<"Independent layout scales and visibility-only pane masks passed\n";

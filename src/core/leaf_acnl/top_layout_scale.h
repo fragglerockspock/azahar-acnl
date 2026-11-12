@@ -58,7 +58,8 @@ inline size_t PatchLeafPaneMasks(std::string_view path,std::vector<u8>& bytes) {
     if (layout!=std::string_view::npos) path.remove_prefix(layout+7);
     const bool tab=path=="Menu/menu_tab.arc",choice=path=="selWin/slct_win.arc";
     const bool wallpaper=path=="Menu/mvmnt_undscrn.arc";
-    if ((!tab && !choice && !wallpaper) || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
+    const bool inventory=path=="ItemWin/item_scrn.arc";
+    if ((!tab && !choice && !wallpaper && !inventory) || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
     const auto read=[&](size_t p) { u32 value=0;if(p<=bytes.size()-4)std::memcpy(&value,bytes.data()+p,4);return value; };
     const size_t table=read(16);
     if (table>bytes.size()-12) return 0;
@@ -84,8 +85,40 @@ inline size_t PatchLeafPaneMasks(std::string_view path,std::vector<u8>& bytes) {
                 const std::string_view pane(text,strnlen(text,24));
                 const bool hide=(tab && (pane=="im_tab_05" || pane=="B_back_00" || pane=="P_post_00" || pane=="B_post_00")) ||
                     (choice && (pane=="P_kuchi_00" || pane=="P_kuchi_sh_00")) ||
-                    (wallpaper && (pane=="P_base_00" || pane=="P_base_01"));
+                    (wallpaper && (pane=="P_base_00" || pane=="P_base_01")) ||
+                    (inventory && (pane=="P_bg_C" || pane=="P_bg_T" || pane=="P_bg_B"));
                 if(hide && (bytes[p+8]&1)) {bytes[p+8]&=254;++changes;}
+            }
+            p+=section;
+        }
+    }
+    return changes;
+}
+
+inline size_t PatchLeafFade(std::string_view path,std::vector<u8>& bytes,float correction) {
+    if (path.find("Layout/Wipe/fade.arc")==std::string_view::npos || !std::isfinite(correction) ||
+        correction<=0 || correction>=2 || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
+    const auto read=[&](size_t p) { u32 value=0;if(p<=bytes.size()-4)std::memcpy(&value,bytes.data()+p,4);return value; };
+    const size_t table=read(16);
+    if(table>bytes.size()-12)return 0;
+    const size_t count=read(table+8);
+    if(!count || count>(bytes.size()-table)/12)return 0;
+    size_t changes=0;
+    for(size_t i=0;i<count;++i) {
+        if(read(table+i*12)>>24)continue;
+        const size_t offset=read(table+i*12+4),size=read(table+i*12+8);
+        if(offset>bytes.size() || size>bytes.size()-offset || size<20 || std::memcmp(bytes.data()+offset,"CLYT",4))continue;
+        u16 header=0;std::memcpy(&header,bytes.data()+offset+6,2);
+        if(header<20 || header>size)continue;
+        for(size_t p=offset+header;p+76<=offset+size;) {
+            const size_t section=read(p+4);
+            if(section<8 || section>offset+size-p)break;
+            if(section>=76 && !std::memcmp(bytes.data()+p,"pic1",4) &&
+                !std::memcmp(bytes.data()+p+12,"P_fade_00\0",10)) {
+                float width=0;std::memcpy(&width,bytes.data()+p+68,4);
+                if(width==400 && correction!=1) {
+                    width=400/correction;std::memcpy(bytes.data()+p+68,&width,4);++changes;
+                }
             }
             p+=section;
         }

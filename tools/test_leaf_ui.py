@@ -99,7 +99,7 @@ int main(int argc,char** argv) {
     UiTransfer(100,200);
     FinishUiFrame(200);
     auto regions=UiRegions(522,240);
-    assert(regions.size()==3 && regions[0].shade==.45f);
+    assert(regions.size()==2 && regions[0].shade==.45f);
     assert(regions[0].destination.left==101 && regions[0].destination.right==421);
     float tx=0,ty=0;
     assert(UiTouch(261,120,522,240,tx,ty));
@@ -113,7 +113,7 @@ int main(int argc,char** argv) {
     assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==200);
     assert(output[522*4]==200);
     for(int frame=0;frame<180;++frame) FinishUiFrame(200);
-    assert(UiRegions(522,240).size()==3);
+    assert(UiRegions(522,240).size()==2);
     UiDraw(100,hud);
     UiTransfer(100,201);
     FinishUiFrame(201);
@@ -162,13 +162,13 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).size()==3);
     UiCommandComplete();
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
     UiTransfer(300,901);
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,hud);
     for(int frame=0;frame<180;++frame) FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==3 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,map,{64,26,280,214});
     UiTransfer(300,902);
     FinishUiFrame(902);
@@ -241,6 +241,11 @@ int main(int argc,char** argv) {
     UiTransfer(scratch,bottom_lcd);
     assert(!UiAfterDisplayTransfer(scratch,bottom_lcd,256,320,240,320,0,copy_end,value,control));
     FinishUiFrame(bottom_lcd);assert(displayed.tags==choice);
+    UiTarget(scratch,256,416,0,240,320);UiDraw(scratch,tab);UiCommandComplete();
+    FinishUiFrame(bottom_lcd);assert(displayed.tags==choice);
+    FinishUiFrame(0x4500000);assert(displayed.tags==choice);
+    UiTarget(0x4600000,320,240,0);UiDraw(0x4600000,hud);UiTransfer(0x4600000,0x4700000);
+    FinishUiFrame(0x4500000);assert(displayed.tags==choice);
     assert(saved_bottom[100]==0xff00ffff && saved_bottom[200]==0x00ff00ff);
     value=0;control=0;
     assert(!UiPrepareFill(scratch,scratch+256*416*4,value,control) && value==0);
@@ -256,6 +261,7 @@ int main(int argc,char** argv) {
     assert(transparent[3]==0 && white[3]==1 && black[3]==1);
     const auto edge=UiKeyPixel(1,.5f,1);
     assert(edge[0]==1 && edge[1]==1 && edge[2]==1 && edge[3]==.5f);
+    have_display_copy=false;displayed_copies.clear();
     UiTarget(0xb00000,320,240,0);
     UiDraw(0xb00000,hud);
     UiTransfer(0xb00000,0xc00000);
@@ -327,6 +333,7 @@ int main(int argc,char** argv) {
     assert(!UiAfterDisplayTransfer(0x4900000,bottom_lcd,256,320,240,320,0,copy_end,value,control));
     value=0;control=0;
     assert(!UiPrepareFill(scratch,scratch+256*416*4,value,control) && value==0 && control==0);
+    have_display_copy=false;displayed_copies.clear();
     const auto title=Register("Layout/selWin/cmn_slct_win.arc","my_csw_LT.bclim",121);
     assert(title==64 && Tags("selWin/cmn_slct_win.arc:im_cmn_arrow32_00.bclim")==256);
     UiDraw(0x1500000,title);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
@@ -339,13 +346,17 @@ int main(int argc,char** argv) {
     assert(!UiAfterDisplayTransfer(scratch,bottom_lcd,256,320,240,320,0,copy_end,value,control));
     FinishUiFrame(bottom_lcd);
     check_rect(UiRegions(522,240)[0].destination,{142,47,380,217});
+    have_display_copy=false;displayed_copies.clear();
     UiDraw(0x1500000,tab);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
+    const auto inventory_tag=Register("Layout/ItemWin/item_scrn.arc","my_itm_leaf.bclim",122);
+    assert(inventory_tag==512);
+    UiDraw(0x1500000,inventory_tag);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
     const auto inventory=UiRegions(522,240);
-    assert(inventory.size()==3 && inventory[0].source.top==25);
+    assert(inventory.size()==2 && inventory[0].source.top==25);
     check_rect(inventory[1].destination,{4,0,214,25});
-    check_rect(inventory[2].destination,{408,0,518,25});
+    assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2U REG ")==0);
+    assert(UiStatus().find("UI FIX 2V REG ")==0);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {
