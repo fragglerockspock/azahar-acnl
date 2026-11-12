@@ -5,6 +5,7 @@
 
 #include "common/color.h"
 #include "core/core.h"
+#include "core/frontend/emu_window.h"
 #include "video_core/gpu.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_software/renderer_software.h"
@@ -47,7 +48,7 @@ void RendererSoftware::LoadFBToScreenInfo(int i, const Pica::ColorFill& color_fi
         if(image.Valid()) {
             framebuffer.address_left1=image.address;framebuffer.address_left2=image.address;
             framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
-            framebuffer.width.Assign(image.width);framebuffer.height=image.height;
+            framebuffer.width.Assign(image.width);framebuffer.height.Assign(image.height);
             framebuffer.stride=image.stride;
             framebuffer.color_format.Assign(static_cast<Pica::PixelFormat>(image.format));
         }
