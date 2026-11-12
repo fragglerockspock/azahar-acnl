@@ -47,7 +47,7 @@ samplerDescriptor.tAddressMode = .clampToEdge
 let sampler = device.makeSamplerState(descriptor: samplerDescriptor)!
 let vertices: [Float] = [-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1]
 let vertexBuffer = vertices.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)! }
-func render(keyed: Bool) -> [UInt8] {
+func render(keyed: Bool, preservePink: Bool = false) -> [UInt8] {
     let targetDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 8, height: 4, mipmapped: false)
     targetDescriptor.storageMode = .shared
     targetDescriptor.usage = .renderTarget
@@ -60,7 +60,7 @@ func render(keyed: Bool) -> [UInt8] {
     var uniform = Data(count: 112)
     let matrix: [Float] = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
     matrix.withUnsafeBytes { uniform.replaceSubrange(0..<64, with: $0) }
-    let ids: [Int32] = [keyed ? 2 : 0, keyed ? -1 : 0, 0, 0]
+    let ids: [Int32] = [keyed ? 2 : 0, keyed ? (preservePink ? -2 : -1) : 0, 0, 0]
     ids.withUnsafeBytes { uniform.replaceSubrange(96..<112, with: $0) }
     let command = queue.makeCommandBuffer()!
     let encoder = command.makeRenderCommandEncoder(descriptor: pass)!
@@ -89,4 +89,11 @@ let green = 7*4
 precondition(keyed[green] == 0 && keyed[green+1] == 255 && keyed[green+2] == 0, "Opaque UI must remain visible")
 let edge = 3*4
 precondition(keyed[edge] > 0 && keyed[edge+1] > 0 && keyed[edge+2] == 0, "Filtered edge must blend without magenta")
-print("Leaf Metal pixel tests passed: main screen unchanged, UI cutout, opaque UI and filtered edge")
+let pinkKeyed = render(keyed: true, preservePink: true)
+precondition(pinkKeyed[0] == 255 && pinkKeyed[1] == 0 && pinkKeyed[2] == 0, "Pink tab key must remain transparent")
+precondition(pinkKeyed[green] == 0 && pinkKeyed[green+1] == 255 && pinkKeyed[green+2] == 0, "Pink mode must preserve non-key foreground")
+let pinkTexels: [UInt8] = [242,77,166,255, 242,77,166,255, 242,77,166,255, 242,77,166,255]
+pinkTexels.withUnsafeBytes { source.replace(region: MTLRegionMake2D(0,0,2,2), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8) }
+let pink = render(keyed: true, preservePink: true)
+precondition(abs(Int(pink[0])-166)<=1 && abs(Int(pink[1])-77)<=1 && abs(Int(pink[2])-242)<=1, "Pink foreground must remain opaque and retain RGB")
+print("Leaf Metal pixel tests passed: main screen unchanged, UI cutout, opaque UI, filtered edge and pink foreground")

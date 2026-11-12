@@ -99,6 +99,7 @@ int main(int argc,char** argv) {
             if(path=="ItemWin/item_scrn.arc")assert(mask_count==3);
             const auto fade_count=LeafACNL::PatchLeafFade("Layout/"+path,bytes,correction);
             if(path=="Wipe/fade.arc")assert(fade_count==1);
+            else if(path=="Wipe/wipe_circle.arc")assert(fade_count==4);
             else assert(fade_count==0);
             masks+=mask_count;
             ++scanned;changed+=count;

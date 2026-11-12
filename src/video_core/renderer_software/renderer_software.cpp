@@ -22,7 +22,8 @@ void RendererSoftware::SwapBuffers() {
     LeafACNL::SetUiAlphaReady(true);
     system.perf_stats->StartSwap();
     const auto& leaf_bottom = pica.regs.framebuffer_config[1];
-    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2);
+    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2,
+        pica.regs_lcd.color_fill_bottom.is_enabled);
     PrepareRenderTarget();
     system.perf_stats->EndSwap();
     EndFrame();
@@ -40,7 +41,17 @@ void RendererSoftware::PrepareRenderTarget() {
 
 void RendererSoftware::LoadFBToScreenInfo(int i, const Pica::ColorFill& color_fill) {
     const u32 fb_id = i == 2 ? 1 : 0;
-    const auto& framebuffer = pica.regs.framebuffer_config[fb_id];
+    auto framebuffer = pica.regs.framebuffer_config[fb_id];
+    if (i==2 && !render_window.GetFramebufferLayout().bottom_screen_enabled) {
+        const auto image=LeafACNL::UiDisplayedImage();
+        if(image.Valid()) {
+            framebuffer.address_left1=image.address;framebuffer.address_left2=image.address;
+            framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
+            framebuffer.width.Assign(image.width);framebuffer.height=image.height;
+            framebuffer.stride=image.stride;
+            framebuffer.color_format.Assign(static_cast<Pica::PixelFormat>(image.format));
+        }
+    }
     auto& info = screen_infos[i];
 
     const PAddr framebuffer_addr =

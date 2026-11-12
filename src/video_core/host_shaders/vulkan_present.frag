@@ -36,7 +36,9 @@ vec4 GetScreen(int screen_id) {
 }
 
 vec4 LeafKeyTexel(vec3 c) {
-    float a=1.0-clamp(min(c.r,c.b)-c.g,0.0,1.0);
+    float spill=clamp(min(c.r,c.b)-c.g,0.0,1.0);
+    if(screen_id_r==-2)spill*=1.0-smoothstep(0.03,0.08,abs(c.r-c.b));
+    float a=1.0-spill;
     vec3 col=clamp((c-(1.0-a)*vec3(1,0,1))/max(a,0.001),0.0,1.0);
     a*=smoothstep(0.06,0.14,a);
     return vec4(col*a,a);
@@ -55,5 +57,5 @@ vec4 LeafKeySample() {
     return vec4(mixed.a>0.0001 ? mixed.rgb/mixed.a : vec3(0),mixed.a);
 }
 void main() {
-    color=screen_id_r==-1 && screen_id_l==2 ? LeafKeySample() : GetScreen(screen_id_l);
+    color=(screen_id_r==-1 || screen_id_r==-2) && screen_id_l==2 ? LeafKeySample() : GetScreen(screen_id_l);
 }

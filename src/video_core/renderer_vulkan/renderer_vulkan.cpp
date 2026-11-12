@@ -182,7 +182,17 @@ void RendererVulkan::PrepareRendertarget() {
     const auto& regs_lcd = pica.regs_lcd;
     for (u32 i = 0; i < 3; i++) {
         const u32 fb_id = i == 2 ? 1 : 0;
-        const auto& framebuffer = framebuffer_config[fb_id];
+        auto framebuffer = framebuffer_config[fb_id];
+        if (i==2 && !render_window.GetFramebufferLayout().bottom_screen_enabled) {
+            const auto image=LeafACNL::UiDisplayedImage();
+            if(image.Valid()) {
+                framebuffer.address_left1=image.address;framebuffer.address_left2=image.address;
+                framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
+                framebuffer.width.Assign(image.width);framebuffer.height=image.height;
+                framebuffer.stride=image.stride;
+                framebuffer.color_format.Assign(static_cast<Pica::PixelFormat>(image.format));
+            }
+        }
         auto& texture = screen_infos[i].texture;
 
         const auto color_fill = fb_id == 0 ? regs_lcd.color_fill_top : regs_lcd.color_fill_bottom;
@@ -1149,7 +1159,7 @@ void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,leaf_alpha_pipeline ? leaf_alpha_pipeline : present_pipelines[index]);
         });
         const int saved_right=draw_info.screen_id_r;
-        if (leaf_alpha_pipeline) draw_info.screen_id_r=-1;
+        if (leaf_alpha_pipeline) draw_info.screen_id_r=region.preserve_color ? -2 : -1;
         const auto original = screen_infos[2].texcoords;
         auto& tex = screen_infos[2].texcoords;
         const float tw = original.right-original.left;
@@ -1265,7 +1275,8 @@ void RendererVulkan::SwapBuffers() {
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
     const auto& leaf_bottom = pica.regs.framebuffer_config[1];
-    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2);
+    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2,
+        pica.regs_lcd.color_fill_bottom.is_enabled);
     PrepareRendertarget();
     RenderScreenshot();
     isSecondaryWindow = false;

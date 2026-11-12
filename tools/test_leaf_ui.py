@@ -99,7 +99,7 @@ int main(int argc,char** argv) {
     UiTransfer(100,200);
     FinishUiFrame(200);
     auto regions=UiRegions(522,240);
-    assert(regions.size()==2 && regions[0].shade==.45f);
+    assert(regions.size()==4 && regions[0].shade==.45f);
     assert(regions[0].destination.left==101 && regions[0].destination.right==421);
     float tx=0,ty=0;
     assert(UiTouch(261,120,522,240,tx,ty));
@@ -113,17 +113,17 @@ int main(int argc,char** argv) {
     assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==200);
     assert(output[522*4]==200);
     for(int frame=0;frame<180;++frame) FinishUiFrame(200);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     UiDraw(100,hud);
     UiTransfer(100,201);
     FinishUiFrame(201);
-    assert(UiRegions(522,240).size()==1);
+    assert(UiRegions(522,240).size()==3);
     UiDraw(100,hud|map,{20,26,300,230});
     UiTransfer(100,200);
     FinishUiFrame(200);
     regions=UiRegions(522,240);
-    assert(regions.size()==2 && regions[1].source.top==26);
-    assert(regions[1].destination.right<522 && regions[1].destination.bottom<240);
+    assert(regions.size()==4 && regions[3].source.top==26);
+    assert(regions[3].destination.right<522 && regions[3].destination.bottom<240);
     UiDraw(100,choice,{100,110,300,210});
     UiDraw(100,choice,{105,105,280,230});
     UiTransfer(100,201);
@@ -162,21 +162,21 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).size()==3);
     UiCommandComplete();
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiTransfer(300,901);
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,hud);
     for(int frame=0;frame<180;++frame) FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==2 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,map,{64,26,280,214});
     UiTransfer(300,902);
     FinishUiFrame(902);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     UiDraw(400,0);
     UiTransfer(400,401);
     for(int frame=0;frame<180;++frame) FinishUiFrame(902);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     UiDraw(300,0);
     UiTransfer(300,902);
     FinishUiFrame(902);
@@ -295,15 +295,15 @@ int main(int argc,char** argv) {
     UiCommandComplete();
     UiTransfer(0x1300000,lcd);
     FinishUiFrame(lcd);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     assert(UiStatus().find("V 240X320 B 256X512")!=std::string::npos);
     value=0;control=0;
     assert(UiPrepareFill(padded,padded_end,value,control) && value==0xff00ffff);
     for(int frame=0;frame<180;++frame)FinishUiFrame(lcd);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     UiDraw(padded,choice,{40,1,280,216});
     FinishUiFrame(lcd);
-    assert(UiRegions(522,240).size()==2);
+    assert(UiRegions(522,240).size()==4);
     UiCommandComplete();
     FinishUiFrame(lcd);
     assert(UiRegions(522,240).size()==1 && displayed.tags==choice);
@@ -352,11 +352,59 @@ int main(int argc,char** argv) {
     assert(inventory_tag==512);
     UiDraw(0x1500000,inventory_tag);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
     const auto inventory=UiRegions(522,240);
-    assert(inventory.size()==2 && inventory[0].source.top==25);
-    check_rect(inventory[1].destination,{4,0,214,25});
+    assert(inventory.size()==4 && inventory[0].source.top==25);
+    check_rect(inventory[1].destination,{4,0,56,25});
+    check_rect(inventory[2].destination,{56,0,108,25});
+    assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2V REG ")==0);
+    assert(UiStatus().find("UI FIX 2W REG ")==0);
+    const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
+    assert(popup==1024);
+    UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
+    UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
+    const auto popup_regions=UiRegions(522,240);
+    const auto& window=popup_regions.back();
+    check_rect(window.source,{44,7,146,87});
+    check_rect(window.destination,{145,7,247,87});
+    for(size_t i=0;i+1<popup_regions.size();++i) {
+        const auto a=popup_regions[i].source,b=window.source;
+        assert(std::min(a.right,b.right)<=std::max(a.left,b.left) ||
+               std::min(a.bottom,b.bottom)<=std::max(a.top,b.top));
+    }
+    assert(UiTouch(196,30,522,240,tx,ty));
+    assert(std::abs(tx-95.0f/320)<.0001f && std::abs(ty-30.0f/240)<.0001f);
+    const auto pink=UiKeyPixel(.95f,.3f,.65f,true);
+    assert(pink[0]==.95f && pink[1]==.3f && pink[2]==.65f && pink[3]==1);
+    assert(UiKeyPixel(.95f,.3f,.65f)[3]<1);
+    assert(UiKeyPixel(1,0,1,true)[3]==0 && UiKeyPixel(1,.5f,1,true)[3]==.5f);
+    ResetUi();
+    const auto image_tab=Register("Layout/Menu/menu_tab.arc","my_men_tab_00.bclim",125);
+    const auto image_choice=Register("Layout/selWin/slct_win.arc","my_slct_body.bclim",126);
+    SetUiAlphaReady(true);
+    const UiImage image_a{0x5300000,240,320,720,1},image_b{0x5400000,240,320,960,0};
+    assert(image_a.Valid() && image_b.Valid());
+    assert((!UiImage{UINT32_MAX-32,240,320,720,1}.Valid()));
+    const auto publish=[&](UiImage image,u32 scene) {
+        UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,0);UiTransfer(scratch,top_lcd);
+        assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+        UiTarget(scratch,256,416,0,240,320);UiDraw(scratch,scene);UiCommandComplete();
+        UiTransfer(scratch,image.address);
+        assert(!UiAfterDisplayTransfer(scratch,image.address,256,320,240,320,0,copy_end,value,control,image));
+    };
+    publish(image_a,image_choice);publish(image_b,image_tab);
+    for(int i=0;i<120;++i) {
+        FinishUiFrame(image_a.address);
+        assert(displayed.tags==image_choice && UiDisplayedImage().address==image_a.address && UiDisplayedImage().stride==720);
+        FinishUiFrame(image_b.address);
+        assert(displayed.tags==image_tab && UiDisplayedImage().address==image_b.address && UiDisplayedImage().stride==960);
+        FinishUiFrame(0x5500000);
+        assert(displayed.tags==image_tab && UiDisplayedImage().address==image_b.address);
+    }
+    FinishUiFrame(image_b.address,true);assert(UiRegions(522,240).empty() && !UiDisplayedImage().Valid());
+    FinishUiFrame(image_b.address);assert(UiDisplayedImage().address==image_b.address);
+    publish(image_a,0);FinishUiFrame(image_a.address);
+    assert(UiRegions(522,240).empty() && UiDisplayedImage().address==image_a.address);
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {
@@ -377,6 +425,14 @@ int main(int argc,char** argv) {
         assert(title_keys>=1);
         std::cout<<"Supplied title-menu texture keys passed\n";
     }
+    if(argc>3) {
+        std::ifstream file(argv[3],std::ios::binary);
+        std::vector<u8> bytes{std::istreambuf_iterator<char>(file),{}};
+        RegisterUiArchive("Layout/ItemWin/itm_slct_win.arc",bytes);
+        size_t popup_keys=0;for(const auto& entry:textures)popup_keys+=(entry.second&ItemPopup)!=0;
+        assert(popup_keys>0);
+        std::cout<<"Supplied inventory-popup texture keys passed\n";
+    }
     std::cout << "Leaf UI registry, scene routing, transfers, crops and software composition passed\n";
 }
 ''')
@@ -387,7 +443,7 @@ try:
     arguments = [str(temp/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
-            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc"):
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc"):
                 target = temp / Path(name).name
                 target.write_bytes(archive.read(name))
                 arguments.append(str(target))

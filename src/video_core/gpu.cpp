@@ -572,7 +572,12 @@ void GPU::MemoryTransfer() {
         if (LeafACNL::UiAfterDisplayTransfer(source,config.GetPhysicalOutputAddress(),
                 config.input_width,config.input_height,config.output_width,config.output_height,
                 static_cast<u32>(config.input_format.Value()),
-                end,keyed.value_32bit,keyed.control)) {
+                end,keyed.value_32bit,keyed.control,
+                config.scaling==config.NoScale && config.input_linear==config.dont_swizzle &&
+                    !(config.flip_vertically && config.crop_input_lines) ?
+                    LeafACNL::UiImage{config.GetPhysicalOutputAddress(),config.output_width,
+                        config.output_height,config.output_width*BytesPerPixel(config.output_format),
+                        static_cast<u32>(config.output_format.Value())} : LeafACNL::UiImage{})) {
             keyed.address_start=source/8;
             keyed.address_end=end/8;
             if (!impl->rasterizer->AccelerateFill(keyed)) impl->sw_blitter->MemoryFill(keyed);

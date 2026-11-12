@@ -13,7 +13,7 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
@@ -23,6 +23,8 @@ struct Frame {
     u32 tags = 0;
     UiRect choice;
     UiRect map;
+    UiRect popup;
+    UiImage image;
     u64 sequence = 0;
 };
 std::unordered_map<u32, Frame> targets;
@@ -55,6 +57,7 @@ u32 Tags(std::string_view name) {
     if (name.find("Menu/menu_tab.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos &&
         name.find(":my_cmn_")==std::string_view::npos) tags |= Tab;
     if (name.find("ItemWin/item_scrn.arc:")==0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Inventory;
+    if (name.find("ItemWin/itm_slct_win.arc:")==0 && name.find(":im_cmn_")==std::string_view::npos && name.find(":my_cmn_")==std::string_view::npos) tags |= ItemPopup;
     if (name == "Menu/menu_tab.arc:my_men_btn_00.bclim") tags |= HudButton;
     for (const auto prefix : {"Menu/map_village.arc:", "Menu/map_island.arc:",
                               "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
@@ -91,6 +94,32 @@ UiRegion Region(UiRect source, float width, float height, float tx, float ty,
     return {source,{std::max(0.0f,std::round(x)),std::max(0.0f,std::round(y)),
                     std::max(0.0f,std::round(x+w)),std::max(0.0f,std::round(y+h))},0};
 }
+UiRegion Slice(UiRegion region,UiRect source) {
+    const auto old=region.source,dst=region.destination;
+    const float x=(dst.right-dst.left)/(old.right-old.left),y=(dst.bottom-dst.top)/(old.bottom-old.top);
+    region.source=source;
+    region.destination={dst.left+(source.left-old.left)*x,dst.top+(source.top-old.top)*y,
+                        dst.left+(source.right-old.left)*x,dst.top+(source.bottom-old.top)*y};
+    return region;
+}
+void AppendOutside(std::vector<UiRegion>& out,UiRegion region,UiRect cut) {
+    const auto s=region.source;
+    const UiRect overlap{std::max(s.left,cut.left),std::max(s.top,cut.top),
+                         std::min(s.right,cut.right),std::min(s.bottom,cut.bottom)};
+    if(!cut.Valid() || !overlap.Valid()) {out.push_back(region);return;}
+    for(const auto piece:std::array<UiRect,4>{{{s.left,s.top,s.right,overlap.top},
+            {s.left,overlap.bottom,s.right,s.bottom},{s.left,overlap.top,overlap.left,overlap.bottom},
+            {overlap.right,overlap.top,s.right,overlap.bottom}}})
+        if(piece.Valid())out.push_back(Slice(region,piece));
+}
+void AppendTabs(std::vector<UiRegion>& out,float width,float height,UiRect cut={}) {
+    const auto tabs=Region({0,0,210,25},width,height,0,0,0,0,1,4,0);
+    for(const auto source:std::array<UiRect,3>{{{0,0,52,25},{52,0,104,25},{104,0,210,25}}}) {
+        auto region=Slice(tabs,source);
+        region.preserve_color=source.left==52;
+        AppendOutside(out,region,cut);
+    }
+}
 }
 bool UiRect::Valid() const {
     return std::isfinite(left) && std::isfinite(top) && std::isfinite(right) &&
@@ -107,10 +136,10 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2V REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2W REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
-           " A "+(alpha_ready.load() ? "ON" : "OFF")+
+           " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" A "+(alpha_ready.load() ? "ON" : "OFF")+
            " V "+std::to_string(observed_info.view_width)+"X"+std::to_string(observed_info.view_height)+
            " B "+std::to_string(observed_info.width)+"X"+std::to_string(observed_info.height);
 }
@@ -136,7 +165,7 @@ bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
     if (pos == std::string_view::npos) return false;
     path.remove_prefix(pos+7);
-    return path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "selWin/slct_win.arc" ||
+    return path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
            path == "selWin/cmn_slct_win.arc" || path == "Title/opng_titl.arc" ||
            path == "common/cmn_btn.arc" ||
            (path.find("Menu/map_") == 0 && path.size() > 4 && path.substr(path.size()-4) == ".arc");
@@ -203,16 +232,17 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
         (w==320 && h>=240 && h<=256);
     const u32 combined=frame.tags|tags;
     const bool title_pair=(combined&TitleBackdrop) && (combined&TitleArrow);
-    if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu|Inventory)) || title_pair)) info.bottom=true;
+    if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup)) || title_pair)) info.bottom=true;
     frame.tags |= tags;
     ++draw_count;
     frame.sequence = ++event_sequence;
     if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
+    if (tags&ItemPopup) Union(frame.popup,bounds);
     const bool top_view=(info.view_width==400 && info.view_height==240) ||
                         (info.view_width==240 && info.view_height==400);
-    if (((tags&(Tab|Map|Choice|TitleMenu|Inventory)) || title_pair) && !top_view) {
+    if (((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup)) || title_pair) && !top_view) {
         observed_pending=frame;
         observed_info=info;
     }
@@ -270,7 +300,7 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
 }
 bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
                             u32 output_width,u32 output_height,u32 format,
-                            u32& end,u32& value,u32& control) {
+                            u32& end,u32& value,u32& control,UiImage image) {
     if (!UiEnabled() || !source || !destination || format>4) return false;
     {
         std::lock_guard lock(ui_mutex);
@@ -281,6 +311,7 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
             if (it!=target_info.end() && source==clear_phase.source && width==it->second.width &&
                 height<=it->second.height && it->second.format==pica_format[format]) {
                 auto snapshot=targets[source];
+                if(image.Valid() && image.address==destination)snapshot.image=image;
                 if (!snapshot.sequence) snapshot.sequence=++event_sequence;
                 completed[destination]=snapshot;
                 displayed_copies[destination]=snapshot;last_display_copy=snapshot;have_display_copy=true;
@@ -346,10 +377,11 @@ void UiPresent(u32 bottom) {
         targets.at(selected).sealed=true;
     }
 }
-void FinishUiFrame(u32 bottom) {
+void FinishUiFrame(u32 bottom,bool lcd_blank) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     const u32 previous=displayed.tags;
+    if(lcd_blank) {displayed={};return;}
     if (have_display_copy) {
         const auto copy=displayed_copies.find(bottom);
         displayed=copy!=displayed_copies.end() ? copy->second : last_display_copy;
@@ -364,8 +396,22 @@ void FinishUiFrame(u32 bottom) {
     displayed=selected;
     if (previous!=displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
 }
-std::array<float,4> UiKeyPixel(float r,float g,float b) {
-    const float a=1-std::clamp(std::min(r,b)-g,0.0f,1.0f);
+UiImage UiDisplayedImage() {
+    std::lock_guard lock(ui_mutex);
+    return displayed.image;
+}
+bool UiImage::Valid() const {
+    constexpr std::array<u32,5> bytes{4,3,2,2,2};
+    return address && format<bytes.size() && width && height && width<=1024 && height<=1024 &&
+        stride>=width*bytes[format] && stride<=4096 && u64{address}+u64{stride}*height<=UINT32_MAX;
+}
+std::array<float,4> UiKeyPixel(float r,float g,float b,bool preserve_color) {
+    float spill=std::clamp(std::min(r,b)-g,0.0f,1.0f);
+    if(preserve_color) {
+        const float balance=std::clamp((std::abs(r-b)-.03f)/.05f,0.0f,1.0f);
+        spill*=1-balance*balance*(3-2*balance);
+    }
+    const float a=1-spill;
     const float divisor=std::max(a,.001f);
     const float t=std::clamp((a-.06f)/.08f,0.0f,1.0f);
     return {std::clamp((r-(1-a))/divisor,0.0f,1.0f),
@@ -391,16 +437,19 @@ std::vector<UiRegion> UiRegions(float width, float height) {
                 Region({0,204,124,240},width,height,.97f,.03f,1,0,.5f,-66,96)};
     if ((tags&Map) && !(tags&Tab))
         return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.5f)};
-    if ((tags&Inventory) || ((tags&Tab) && !(tags&HudButton))) {
-        auto body=Region({0,0,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
-        const float factor=(body.destination.bottom-body.destination.top)/240;
-        body.source.top=25;
-        body.destination.top+=std::round(25*factor);
-        body.shade=.45f;
-        return {body,Region({0,0,210,25},width,height,0,0,0,0,1,4,0)};
+    if ((tags&(Inventory|ItemPopup)) || ((tags&Tab) && !(tags&HudButton))) {
+        const auto full=Region({0,0,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
+        const auto popup=(tags&ItemPopup) && displayed.popup.Valid() ? Crop(displayed.popup,3) : UiRect{};
+        std::vector<UiRegion> regions;
+        AppendOutside(regions,Slice(full,{0,25,320,240}),popup);
+        AppendTabs(regions,width,height,popup);
+        if(popup.Valid())regions.push_back(Slice(full,popup));
+        if(!regions.empty())regions[0].shade=.45f;
+        return regions;
     }
     if ((tags&Tab) && (tags&HudButton)) {
-        std::vector<UiRegion> regions{Region({0,0,210,25},width,height,0,0,0,0,1,4,0)};
+        std::vector<UiRegion> regions;
+        AppendTabs(regions,width,height);
         if (tags&HudMap) {
             auto source = displayed.map.Valid() ? Crop(displayed.map,1) : UiRect{64,26,280,214};
             source.top = std::max(26.0f,source.top);
@@ -443,7 +492,7 @@ void CompositeUi(u8* output, size_t pitch, u32 width, u32 height,
                 const auto sy = static_cast<u32>(std::clamp(region.source.top+(y+.5f-dst.top)/(dst.bottom-dst.top)*(region.source.bottom-region.source.top),0.0f,239.0f));
                 const u8* src = bottom+(size_t{sy}*bottom_stride+sx)*4;
                 u8* pixel = output+size_t{static_cast<u32>(y)}*pitch+static_cast<u32>(x)*4;
-                const auto keyed=UiKeyPixel(src[0]/255.0f,src[1]/255.0f,src[2]/255.0f);
+                const auto keyed=UiKeyPixel(src[0]/255.0f,src[1]/255.0f,src[2]/255.0f,region.preserve_color);
                 for (size_t c=0;c<3;++c)
                     pixel[c]=static_cast<u8>(std::lround(keyed[2-c]*255*keyed[3]+pixel[c]*(1-keyed[3])));
             }

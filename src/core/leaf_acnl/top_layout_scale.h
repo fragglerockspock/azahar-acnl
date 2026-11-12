@@ -96,7 +96,9 @@ inline size_t PatchLeafPaneMasks(std::string_view path,std::vector<u8>& bytes) {
 }
 
 inline size_t PatchLeafFade(std::string_view path,std::vector<u8>& bytes,float correction) {
-    if (path.find("Layout/Wipe/fade.arc")==std::string_view::npos || !std::isfinite(correction) ||
+    const bool fade=path.find("Layout/Wipe/fade.arc")!=std::string_view::npos;
+    const bool circle=path.find("Layout/Wipe/wipe_circle.arc")!=std::string_view::npos;
+    if ((!fade && !circle) || !std::isfinite(correction) ||
         correction<=0 || correction>=2 || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
     const auto read=[&](size_t p) { u32 value=0;if(p<=bytes.size()-4)std::memcpy(&value,bytes.data()+p,4);return value; };
     const size_t table=read(16);
@@ -113,11 +115,14 @@ inline size_t PatchLeafFade(std::string_view path,std::vector<u8>& bytes,float c
         for(size_t p=offset+header;p+76<=offset+size;) {
             const size_t section=read(p+4);
             if(section<8 || section>offset+size-p)break;
-            if(section>=76 && !std::memcmp(bytes.data()+p,"pic1",4) &&
-                !std::memcmp(bytes.data()+p+12,"P_fade_00\0",10)) {
+            const char* name=reinterpret_cast<const char*>(bytes.data()+p+12);
+            const std::string_view pane(name,strnlen(name,24));
+            const bool fill=(fade && pane=="P_fade_00") ||
+                (circle && (pane=="P_L" || pane=="P_R" || pane=="P_T" || pane=="P_B"));
+            if(section>=76 && !std::memcmp(bytes.data()+p,"pic1",4) && fill) {
                 float width=0;std::memcpy(&width,bytes.data()+p+68,4);
-                if(width==400 && correction!=1) {
-                    width=400/correction;std::memcpy(bytes.data()+p+68,&width,4);++changes;
+                if((width==400 || (circle && width==240)) && correction!=1) {
+                    width/=correction;std::memcpy(bytes.data()+p+68,&width,4);++changes;
                 }
             }
             p+=section;
