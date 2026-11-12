@@ -374,6 +374,12 @@ int main(int argc,char** argv) {
     }
     assert(UiTouch(196,30,522,240,tx,ty));
     assert(std::abs(tx-95.0f/320)<.0001f && std::abs(ty-30.0f/240)<.0001f);
+    const auto dialog=Register("Layout/common/cmn_dialog_A.arc","my_cmn_ballon_XXL.bclim",124);
+    assert(dialog==2048);
+    UiDraw(0x1500000,inventory_tag|tab|dialog,{30,18,290,221});
+    UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
+    check_rect(UiRegions(522,240).back().source,{27,15,293,224});
+    check_rect(UiRegions(522,240).back().destination,{128,15,394,224});
     const auto pink=UiKeyPixel(.95f,.3f,.65f,true);
     assert(pink[0]==.95f && pink[1]==.3f && pink[2]==.65f && pink[3]==1);
     assert(UiKeyPixel(.95f,.3f,.65f)[3]<1);
@@ -433,6 +439,14 @@ int main(int argc,char** argv) {
         assert(popup_keys>0);
         std::cout<<"Supplied inventory-popup texture keys passed\n";
     }
+    if(argc>4) {
+        std::ifstream file(argv[4],std::ios::binary);
+        std::vector<u8> bytes{std::istreambuf_iterator<char>(file),{}};
+        RegisterUiArchive("Layout/common/cmn_dialog_A.arc",bytes);
+        size_t dialog_keys=0;for(const auto& entry:textures)dialog_keys+=(entry.second&Dialog)!=0;
+        assert(dialog_keys>0);
+        std::cout<<"Supplied common-dialog texture keys passed\n";
+    }
     std::cout << "Leaf UI registry, scene routing, transfers, crops and software composition passed\n";
 }
 ''')
@@ -443,7 +457,7 @@ try:
     arguments = [str(temp/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
-            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc"):
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc"):
                 target = temp / Path(name).name
                 target.write_bytes(archive.read(name))
                 arguments.append(str(target))

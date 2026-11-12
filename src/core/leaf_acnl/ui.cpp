@@ -13,7 +13,7 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
@@ -58,6 +58,7 @@ u32 Tags(std::string_view name) {
         name.find(":my_cmn_")==std::string_view::npos) tags |= Tab;
     if (name.find("ItemWin/item_scrn.arc:")==0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Inventory;
     if (name.find("ItemWin/itm_slct_win.arc:")==0 && name.find(":im_cmn_")==std::string_view::npos && name.find(":my_cmn_")==std::string_view::npos) tags |= ItemPopup;
+    if (name=="common/cmn_dialog_A.arc:my_cmn_ballon_XXL.bclim") tags |= Dialog;
     if (name == "Menu/menu_tab.arc:my_men_btn_00.bclim") tags |= HudButton;
     for (const auto prefix : {"Menu/map_village.arc:", "Menu/map_island.arc:",
                               "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
@@ -167,7 +168,7 @@ bool IsUiArchivePath(std::string_view path) {
     path.remove_prefix(pos+7);
     return path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
            path == "selWin/cmn_slct_win.arc" || path == "Title/opng_titl.arc" ||
-           path == "common/cmn_btn.arc" ||
+           path == "common/cmn_btn.arc" || path == "common/cmn_dialog_A.arc" ||
            (path.find("Menu/map_") == 0 && path.size() > 4 && path.substr(path.size()-4) == ".arc");
 }
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes) {
@@ -232,17 +233,17 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
         (w==320 && h>=240 && h<=256);
     const u32 combined=frame.tags|tags;
     const bool title_pair=(combined&TitleBackdrop) && (combined&TitleArrow);
-    if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup)) || title_pair)) info.bottom=true;
+    if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair)) info.bottom=true;
     frame.tags |= tags;
     ++draw_count;
     frame.sequence = ++event_sequence;
     if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
-    if (tags&ItemPopup) Union(frame.popup,bounds);
+    if (tags&(ItemPopup|Dialog)) Union(frame.popup,bounds);
     const bool top_view=(info.view_width==400 && info.view_height==240) ||
                         (info.view_width==240 && info.view_height==400);
-    if (((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup)) || title_pair) && !top_view) {
+    if (((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair) && !top_view) {
         observed_pending=frame;
         observed_info=info;
     }
@@ -437,9 +438,9 @@ std::vector<UiRegion> UiRegions(float width, float height) {
                 Region({0,204,124,240},width,height,.97f,.03f,1,0,.5f,-66,96)};
     if ((tags&Map) && !(tags&Tab))
         return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.5f)};
-    if ((tags&(Inventory|ItemPopup)) || ((tags&Tab) && !(tags&HudButton))) {
+    if ((tags&(Inventory|ItemPopup|Dialog)) || ((tags&Tab) && !(tags&HudButton))) {
         const auto full=Region({0,0,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
-        const auto popup=(tags&ItemPopup) && displayed.popup.Valid() ? Crop(displayed.popup,3) : UiRect{};
+        const auto popup=(tags&(ItemPopup|Dialog)) && displayed.popup.Valid() ? Crop(displayed.popup,3) : UiRect{};
         std::vector<UiRegion> regions;
         AppendOutside(regions,Slice(full,{0,25,320,240}),popup);
         AppendTabs(regions,width,height,popup);
