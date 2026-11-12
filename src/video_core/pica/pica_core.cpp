@@ -368,6 +368,7 @@ void PicaCore::ProcessCmdList(PAddr list, u32 size, bool ignore_list) [[hot]] {
             }
         }
     }
+    LeafACNL::UiCommandComplete();
 }
 
 static bool any_byte_match(u32 a, u32 b) {
@@ -1099,8 +1100,15 @@ void PicaCore::ProbeLeafUi(bool is_indexed) {
         }
     }
     const auto& framebuffer=regs.internal.framebuffer.framebuffer;
+    const auto& ui_raster=regs.internal.rasterizer;
+    const float ui_width=2*f24::FromRaw(ui_raster.viewport_size_x).ToFloat32();
+    const float ui_height=2*f24::FromRaw(ui_raster.viewport_size_y).ToFloat32();
+    const auto extent=[](float value) -> u32 {
+        return std::isfinite(value) && value>0 && value<=4096 ? static_cast<u32>(std::lround(value)) : 0;
+    };
     LeafACNL::UiTarget(framebuffer.GetColorBufferPhysicalAddress(),framebuffer.GetWidth(),
-                      framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()));
+                      framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()),
+                      extent(ui_width),extent(ui_height));
     LeafACNL::UiDraw(regs.internal.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),tags,bounds);
 }
 

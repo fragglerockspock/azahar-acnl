@@ -564,6 +564,19 @@ void GPU::MemoryTransfer() {
     }
 
     LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress());
+    if (!config.is_texture_copy) {
+        const auto source=config.GetPhysicalInputAddress();
+        u32 end=0;
+        Pica::MemoryFillConfig keyed{};
+        keyed.control=1;
+        if (LeafACNL::UiTransferClear(source,config.GetPhysicalOutputAddress(),
+                config.input_width,config.input_height,static_cast<u32>(config.input_format.Value()),
+                end,keyed.value_32bit,keyed.control)) {
+            keyed.address_start=source/8;
+            keyed.address_end=end/8;
+            if (!impl->rasterizer->AccelerateFill(keyed)) impl->sw_blitter->MemoryFill(keyed);
+        }
+    }
 
     // Complete transfer.
     config.trigger.Assign(0);

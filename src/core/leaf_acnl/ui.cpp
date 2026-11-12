@@ -26,14 +26,18 @@ struct Frame {
     u64 sequence = 0;
 };
 std::unordered_map<u32, Frame> targets;
-struct TargetInfo { u32 width=0,height=0,format=0; size_t size=0; bool bottom=false; };
+struct TargetInfo {
+    u32 width=0,height=0,format=0,view_width=0,view_height=0;
+    size_t size=0,key_size=0;
+    bool bottom=false,top_seen=false;
+};
 std::unordered_map<u32,TargetInfo> target_info;
 std::unordered_map<u32,Frame> completed;
-Frame last_completed;
+Frame last_completed,observed_pending,observed_completed;
+TargetInfo observed_info;
 bool have_completed=false;
 std::atomic_bool alpha_ready{false};
 u64 key_count=0,event_sequence=0;
-u32 displayed_address=0;
 Frame displayed;
 u64 draw_count = 0, match_count = 0, transfer_count = 0;
 void Union(UiRect& a, UiRect b) {
@@ -94,10 +98,12 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2S REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2T REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
-           " A "+(alpha_ready.load() ? "ON" : "OFF");
+           " A "+(alpha_ready.load() ? "ON" : "OFF")+
+           " V "+std::to_string(observed_info.view_width)+"X"+std::to_string(observed_info.view_height)+
+           " B "+std::to_string(observed_info.width)+"X"+std::to_string(observed_info.height);
 }
 void ResetUi() {
     std::lock_guard lock(ui_mutex);
@@ -108,10 +114,10 @@ void ResetUi() {
     displayed = {};
     target_info.clear();
     completed.clear();
-    last_completed={};
+    last_completed=observed_pending=observed_completed={};
+    observed_info={};
     have_completed=false;
     key_count=event_sequence=0;
-    displayed_address=0;
     draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
@@ -178,9 +184,10 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     auto& frame = targets[target];
     if (frame.sealed) frame={};
     auto& info=target_info[target];
-    const bool bottom_shape=!info.width ||
-        ((info.width==240 || info.width==256) && info.height==320) ||
-        (info.width==320 && info.height>=240 && info.height<=256);
+    const u32 w=info.view_width ? info.view_width : info.width;
+    const u32 h=info.view_height ? info.view_height : info.height;
+    const bool bottom_shape=!w || ((w==240 || w==256) && h==320) ||
+        (w==320 && h>=240 && h<=256);
     if (bottom_shape && (tags&(Tab|Map|Choice))) info.bottom=true;
     frame.tags |= tags;
     ++draw_count;
@@ -188,18 +195,38 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (tags) ++match_count;
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
+    const bool top_view=(info.view_width==400 && info.view_height==240) ||
+                        (info.view_width==240 && info.view_height==400);
+    if ((tags&(Tab|Map|Choice)) && !top_view) {
+        observed_pending=frame;
+        observed_info=info;
+    }
 }
-void UiTarget(u32 address, u32 width, u32 height, u32 format) {
+void UiTarget(u32 address, u32 width, u32 height, u32 format, u32 view_width, u32 view_height) {
     if (!UiEnabled() || !address) return;
     std::lock_guard lock(ui_mutex);
     auto& info=target_info[address];
     if (info.width!=width || info.height!=height || info.format!=format) {
-        info={width,height,format,0,false};
+        info={};
+        info.width=width;info.height=height;info.format=format;
         targets[address]={};
+    }
+    info.view_width=view_width;info.view_height=view_height;
+    const bool bottom_view=((view_width==240 || view_width==256) && view_height==320) ||
+                           (view_width==320 && view_height>=240 && view_height<=256);
+    if (view_width && view_height && !bottom_view) info.bottom=false;
+    if ((view_width==400 && view_height==240) || (view_width==240 && view_height==400)) {
+        info.top_seen=true;
+        info.bottom=false;
     }
     constexpr std::array<u32,5> bytes{4,3,2,2,2};
     if (format<bytes.size() && width && height && width<=1024 && height<=1024)
         info.size=size_t{width}*height*bytes[format];
+}
+void UiCommandComplete() {
+    if (!UiEnabled()) return;
+    std::lock_guard lock(ui_mutex);
+    if (observed_pending.sequence>observed_completed.sequence) observed_completed=observed_pending;
 }
 void SetUiAlphaReady(bool ready) { alpha_ready=ready; }
 bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
@@ -207,10 +234,11 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     std::lock_guard lock(ui_mutex);
     const auto it=target_info.find(start);
     if (it==target_info.end() || !it->second.size ||
-        u64{end}!=u64{start}+it->second.size) return false;
+        (u64{end}!=u64{start}+it->second.size &&
+         (!it->second.key_size || u64{end}!=u64{start}+it->second.key_size))) return false;
     targets[start]={};
     targets[start].sequence=++event_sequence;
-    if (!alpha_ready || !it->second.bottom) return false;
+    if (!alpha_ready || !it->second.bottom || it->second.top_seen) return false;
     control &= ~0x300u;
     switch(it->second.format) {
     case 0: value=0xff00ffff;control|=0x200;break;
@@ -223,6 +251,26 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     ++key_count;
     return true;
 }
+bool UiTransferClear(u32 source,u32 destination,u32 width,u32 height,u32 format,
+                     u32& end,u32& value,u32& control) {
+    if (!UiEnabled() || !alpha_ready || !source || !destination || format>4) return false;
+    {
+        std::lock_guard lock(ui_mutex);
+        const auto it=target_info.find(source);
+        if (it==target_info.end()) return false;
+        auto& info=it->second;
+        constexpr std::array<u32,5> pica_format{0,1,3,2,4},pixel_bytes{4,3,2,2,2};
+        if (!info.bottom || info.top_seen || !info.size || info.format!=pica_format[format] ||
+            width!=info.width || !height || height>info.height ||
+            height<(info.view_height ? info.view_height : info.height)) return false;
+        const u64 span=u64{width}*height*pixel_bytes[format];
+        if (span>info.size || span>UINT32_MAX-source || span%8 ||
+            (u64{destination}<u64{source}+span && u64{destination}+u64{width}*height*4>source)) return false;
+        info.key_size=static_cast<size_t>(span);
+        end=source+static_cast<u32>(span);
+    }
+    return UiPrepareFill(source,end,value,control);
+}
 void UiTransfer(u32 source, u32 destination) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
@@ -231,7 +279,7 @@ void UiTransfer(u32 source, u32 destination) {
     if (it==targets.end()) {
         targets.erase(destination);
         completed[destination]={};
-        if(destination==displayed_address) {last_completed={};have_completed=true;}
+
         return;
     }
     const Frame snapshot=it->second;
@@ -239,7 +287,9 @@ void UiTransfer(u32 source, u32 destination) {
     targets[destination]=snapshot;
     targets[destination].sealed=true;
     completed[destination]=snapshot;
-    if (snapshot.tags || target_info[source].bottom) { last_completed=snapshot;have_completed=true; }
+    if (target_info[source].bottom || (snapshot.tags && !target_info[source].width)) {
+        last_completed=snapshot;have_completed=true;
+    }
 }
 void UiPresent(u32 bottom) {
     if (!UiEnabled()) return;
@@ -264,11 +314,13 @@ void UiPresent(u32 bottom) {
 void FinishUiFrame(u32 bottom) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
-    displayed_address=bottom;
     const u32 previous=displayed.tags;
     const auto done=completed.find(bottom);
-    if (done!=completed.end()) displayed=done->second;
-    else if (have_completed) displayed=last_completed;
+    Frame selected;
+    if (done!=completed.end()) selected=done->second;
+    if (have_completed && last_completed.sequence>selected.sequence) selected=last_completed;
+    if (observed_completed.sequence>selected.sequence) selected=observed_completed;
+    displayed=selected;
     if (previous!=displayed.tags) LOG_INFO(Core,"Leaf UI displayed scene tags: {}",displayed.tags);
 }
 std::array<float,4> UiKeyPixel(float r,float g,float b) {

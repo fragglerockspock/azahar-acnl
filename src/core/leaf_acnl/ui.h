@@ -25,7 +25,11 @@ bool IsUiArchivePath(std::string_view path);
 void RegisterUiArchive(std::string_view path, const std::vector<u8>& bytes);
 bool UiEnabled();
 u32 UiTexture(const u8* data, size_t size, u32 width, u32 height);
-void UiTarget(u32 address, u32 width, u32 height, u32 format);
+void UiTarget(u32 address, u32 width, u32 height, u32 format,
+              u32 view_width = 0, u32 view_height = 0);
+void UiCommandComplete();
+bool UiTransferClear(u32 source, u32 destination, u32 width, u32 height, u32 format,
+                     u32& end, u32& value, u32& control);
 bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control);
 void UiPresent(u32 bottom);
 void SetUiAlphaReady(bool ready);
