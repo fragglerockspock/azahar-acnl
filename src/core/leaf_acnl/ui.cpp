@@ -13,7 +13,7 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048, Wallpaper = 4096;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
@@ -56,6 +56,7 @@ void Union(UiRect& a, UiRect b) {
 }
 u32 Tags(std::string_view name) {
     u32 tags = 0;
+    if (name.find("Menu/mvmnt_undscrn.arc:my_mvm_")==0) tags |= Wallpaper;
     if (name.find("Menu/menu_tab.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos &&
         name.find(":my_cmn_")==std::string_view::npos) tags |= Tab;
     if (name.find("ItemWin/item_scrn.arc:")==0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Inventory;
@@ -139,7 +140,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2Z REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AA REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -169,7 +170,7 @@ bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
     if (pos == std::string_view::npos) return false;
     path.remove_prefix(pos+7);
-    return path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
+    return path == "Menu/mvmnt_undscrn.arc" || path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
            path == "selWin/cmn_slct_win.arc" || path == "Title/opng_titl.arc" ||
            path == "common/cmn_btn.arc" || path == "common/cmn_dialog_A.arc" ||
            (path.find("Menu/map_") == 0 && path.size() > 4 && path.substr(path.size()-4) == ".arc");
@@ -224,6 +225,9 @@ u32 UiTexture(const u8* data, size_t size, u32 width, u32 height) {
     const auto it = textures.find(key);
     return it == textures.end() ? 0 : it->second;
 }
+bool UiShouldSkipDraw(u32 tags) {
+    return UiEnabled() && (tags&Wallpaper);
+}
 void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
@@ -234,6 +238,7 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     const u32 h=info.view_height ? info.view_height : info.height;
     const bool bottom_shape=!w || ((w==240 || w==256) && h==320) ||
         (w==320 && h>=240 && h<=256);
+    tags &= ~Wallpaper;
     const u32 combined=frame.tags|tags;
     const bool title_pair=(combined&TitleBackdrop) && (combined&TitleArrow);
     if (bottom_shape && ((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair)) info.bottom=true;
@@ -500,7 +505,10 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         auto source=Crop(displayed.choice,3);
         source.top=std::max(1.0f,source.top);
         if (source.right-source.left<4 || source.bottom-source.top<4) return {};
-        return {Region(source,width,height,.965f,.54f,1,1,.8f)};
+        const auto region=Region(source,width,height,.965f,.54f,1,1,.8f);
+        auto sample=source;
+        sample.top=std::max(1.0f,sample.top-13);
+        return {Slice(region,sample)};
     }
     if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))
         return {Region({20,20,300,220},width,height,.5f,.55f,.5f,.5f,.85f)};

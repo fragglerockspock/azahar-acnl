@@ -1047,8 +1047,8 @@ void PicaCore::DrawImmediate() {
     }
 }
 
-void PicaCore::ProbeLeafUi(bool is_indexed) {
-    if (!LeafACNL::UiEnabled()) return;
+bool PicaCore::ProbeLeafUi(bool is_indexed) {
+    if (!LeafACNL::UiEnabled()) return false;
     const auto& texturing = regs.internal.texturing;
     u32 tags = 0;
     if (texturing.main_config.texture0_enable &&
@@ -1063,6 +1063,7 @@ void PicaCore::ProbeLeafUi(bool is_indexed) {
                                       texture.width,texture.height);
         }
     }
+    if (LeafACNL::UiShouldSkipDraw(tags)) return true;
     LeafACNL::UiRect bounds;
     const auto& pipeline = regs.internal.pipeline;
     if (tags && pipeline.num_vertices>0 && pipeline.num_vertices<=64 &&
@@ -1110,10 +1111,11 @@ void PicaCore::ProbeLeafUi(bool is_indexed) {
                       framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()),
                       extent(ui_width),extent(ui_height));
     LeafACNL::UiDraw(regs.internal.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),tags,bounds);
+    return false;
 }
 
 void PicaCore::DrawArrays(bool is_indexed) {
-    ProbeLeafUi(is_indexed);
+    if (ProbeLeafUi(is_indexed)) return;
     MICROPROFILE_SCOPE(GPU_Drawing);
 
     // Track vertex in the debug recorder.

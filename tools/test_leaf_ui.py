@@ -129,7 +129,7 @@ int main(int argc,char** argv) {
     UiTransfer(100,201);
     FinishUiFrame(201);
     regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==102 && regions[0].source.bottom==233);
+    assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==89 && regions[0].source.bottom==233);
     assert(regions[0].destination.right==504 && regions[0].destination.bottom==130);
     UiDraw(100,0);
     UiTransfer(100,200);
@@ -368,7 +368,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2Z REG ")==0);
+    assert(UiStatus().find("UI FIX 2AA REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -474,9 +474,10 @@ int main(int argc,char** argv) {
         end_bottom();
         const auto region=UiRegions(522,240);
         assert(region.size()==1);
-        check_rect(region[0].source,Crop(bounds,3));
+        auto guarded_source=Crop(bounds,3);guarded_source.top-=13;
+        check_rect(region[0].source,guarded_source);
         const auto expected=Region(Crop(bounds,3),522,240,.965f,.54f,1,1,.8f);
-        check_rect(region[0].destination,expected.destination);
+        check_rect(region[0].destination,Slice(expected,guarded_source).destination);
         UiDraw(scratch,transition_inventory);UiCommandComplete();
         FinishUiFrame(transition_lcd);assert(displayed.tags==transition_choice);
     }
@@ -493,6 +494,35 @@ int main(int argc,char** argv) {
     UiDraw(scratch,transition_title);UiCommandComplete();FinishUiFrame(transition_lcd);
     assert(UiRegions(522,240).empty());
     begin_bottom();UiDraw(scratch,0);end_bottom();
+    assert(UiRegions(522,240).empty());
+    ResetUi();
+    const auto wallpaper=Register("Layout/Menu/mvmnt_undscrn.arc","my_mvm_ruck.bclim",150);
+    const auto choice_guard=Register("Layout/selWin/slct_win.arc","im_WinCorner_R.bclim",151);
+    assert(wallpaper==Wallpaper && UiShouldSkipDraw(wallpaper));
+    assert(choice_guard==Choice && !UiShouldSkipDraw(choice_guard));
+    assert(!UiShouldSkipDraw(0) && !UiShouldSkipDraw(Inventory));
+    for(int phase=0;phase<32;++phase) {
+        const float size=static_cast<float>(phase<16 ? phase+1 : 32-phase);
+        const UiRect bounds{160-4*size,110-2*size,160+4*size,110+2*size};
+        UiDraw(0x7100000,choice_guard,bounds);
+        UiTransfer(0x7100000,0x7200000);FinishUiFrame(0x7200000);
+        const auto regions=UiRegions(522,240);
+        assert(regions.size()==1);
+        const auto original=Region(Crop(bounds,3),522,240,.965f,.54f,1,1,.8f);
+        const auto guarded=regions[0];
+        assert(guarded.source.top==bounds.top-16);
+        assert(guarded.source.left==original.source.left && guarded.source.right==original.source.right);
+        assert(guarded.destination.left==original.destination.left && guarded.destination.right==original.destination.right);
+        assert(guarded.destination.bottom==original.destination.bottom);
+        const float expected_y=original.destination.top+
+            (bounds.top-original.source.top)*(original.destination.bottom-original.destination.top)/
+            (original.source.bottom-original.source.top);
+        const float guarded_y=guarded.destination.top+
+            (bounds.top-guarded.source.top)*(guarded.destination.bottom-guarded.destination.top)/
+            (guarded.source.bottom-guarded.source.top);
+        assert(std::abs(expected_y-guarded_y)<.001f);
+    }
+    UiDraw(0x7100000,wallpaper,{0,0,320,240});UiTransfer(0x7100000,0x7200000);FinishUiFrame(0x7200000);
     assert(UiRegions(522,240).empty());
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
@@ -530,6 +560,18 @@ int main(int argc,char** argv) {
         assert(dialog_keys>0);
         std::cout<<"Supplied common-dialog texture keys passed\n";
     }
+    if(argc>5) {
+        ResetUi();
+        std::ifstream wall_file(argv[5],std::ios::binary);
+        std::vector<u8> wall_bytes{std::istreambuf_iterator<char>(wall_file),{}};
+        RegisterUiArchive("Layout/Menu/mvmnt_undscrn.arc",wall_bytes);
+        size_t wall_count=0;
+        for(const auto& entry:textures) {
+            if(entry.second&Wallpaper){++wall_count;assert(UiShouldSkipDraw(entry.second));}
+        }
+        assert(wall_count==11);
+        std::cout<<"Supplied eleven wallpaper texture keys passed\n";
+    }
     std::cout << "Leaf UI registry, scene routing, transfers, crops and software composition passed\n";
 }
 ''')
@@ -540,7 +582,7 @@ try:
     arguments = [str(temp/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
-            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc"):
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc", "Menu/mvmnt_undscrn.arc"):
                 target = temp / Path(name).name
                 target.write_bytes(archive.read(name))
                 arguments.append(str(target))

@@ -50,6 +50,7 @@ void UiPresent(u32 bottom);
 void SetUiAlphaReady(bool ready);
 std::array<float,4> UiKeyPixel(float r, float g, float b, bool preserve_color = false);
 UiImage UiDisplayedImage();
+bool UiShouldSkipDraw(u32 tags);
 void UiDraw(u32 target, u32 tags, UiRect bounds = {});
 void UiTransfer(u32 source, u32 destination, bool complete = true);
 void FinishUiFrame(u32 bottom, bool lcd_blank = false);
