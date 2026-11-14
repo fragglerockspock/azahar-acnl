@@ -138,7 +138,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2X REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2Y REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -244,7 +244,8 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (tags&(ItemPopup|Dialog)) Union(frame.popup,bounds);
     const bool top_view=(info.view_width==400 && info.view_height==240) ||
                         (info.view_width==240 && info.view_height==400);
-    if (((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair) && !top_view) {
+    if (!top_view && ((bottom_shape && info.view_width && info.view_height) ||
+        (tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair)) {
         observed_pending=frame;
         observed_info=info;
     }
@@ -285,6 +286,12 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
          (!clear_phase.active || start!=clear_phase.source || end!=clear_phase.end))) return false;
     targets[start]={};
     targets[start].sequence=++event_sequence;
+    const auto& info=it->second;
+    if (((info.view_width==240 || info.view_width==256) && info.view_height==320) ||
+        (info.view_width==320 && info.view_height>=240 && info.view_height<=256)) {
+        observed_pending=targets[start];
+        observed_info=info;
+    }
     if (!alpha_ready || !clear_phase.active || start!=clear_phase.source || end>clear_phase.end)
         return false;
     targets[start].tags=clear_phase.backdrop;
@@ -325,6 +332,15 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
                 last_completed=snapshot;have_completed=true;
                 const u64 copied=u64{width}*height*pixel_bytes[format];
                 if (copied<=it->second.size)it->second.key_size=static_cast<size_t>(copied);
+            }
+            if (image_route==1 && image.Valid() && image.address==destination &&
+                observed_completed.sequence && observed_info.bottom) {
+                auto snapshot=observed_completed;
+                snapshot.image=image;
+                completed[destination]=snapshot;
+                displayed_copies[destination]=snapshot;last_display_copy=snapshot;have_display_copy=true;
+                last_completed=snapshot;have_completed=true;
+                image_route=5;
             }
             clear_phase.active=false;
             return false;
@@ -463,7 +479,9 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         if ((tags&Map) && !(tags&HudButton))
             return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.52f)};
         const auto source = displayed.choice.Valid() ? Crop(displayed.choice,3) : UiRect{40,1,280,216};
-        return {Region(source,width,height,.965f,.54f,1,1,.8f)};
+        const float factor=height/240*.8f;
+        return {{source,{width*.965f+(source.left-280)*factor,height*.54f+(source.top-216)*factor,
+                         width*.965f+(source.right-280)*factor,height*.54f+(source.bottom-216)*factor},0}};
     }
     if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))
         return {Region({20,20,300,220},width,height,.5f,.55f,.5f,.5f,.85f)};

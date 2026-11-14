@@ -130,7 +130,12 @@ int main(int argc,char** argv) {
     FinishUiFrame(201);
     regions=UiRegions(522,240);
     assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==102 && regions[0].source.bottom==233);
-    assert(regions[0].destination.right==504 && regions[0].destination.bottom==130);
+    const auto moving=regions[0];
+    UiDraw(100,choice,{110,115,310,220});UiTransfer(100,200);FinishUiFrame(200);
+    const auto shifted=UiRegions(522,240)[0];
+    assert(std::abs((shifted.destination.left-moving.destination.left)-8)<.01f);
+    assert(std::abs((shifted.destination.top-moving.destination.top)-8)<.01f);
+    assert(std::abs((shifted.destination.right-moving.destination.right)-8)<.01f);
     UiDraw(100,0);
     UiTransfer(100,200);
     FinishUiFrame(200);
@@ -358,7 +363,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2X REG ")==0);
+    assert(UiStatus().find("UI FIX 2Y REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -435,6 +440,14 @@ int main(int argc,char** argv) {
     }
     FinishUiFrame(image_b.address,true);assert(UiRegions(522,240).empty() && !UiDisplayedImage().Valid());
     FinishUiFrame(image_b.address);assert(UiDisplayedImage().address==image_b.address);
+    UiTarget(scratch,256,416,0,240,320);UiDraw(scratch,image_tab);UiCommandComplete();
+    assert(!UiAfterDisplayTransfer(0x5900000,image_b.address,240,320,240,320,1,copy_end,value,control,image_b));
+    FinishUiFrame(image_b.address);
+    assert(image_route==5 && displayed.tags==image_tab && UiDisplayedImage().address==image_b.address);
+    UiPrepareFill(scratch,scratch+256*416*4,value,control);
+    UiDraw(scratch,0);UiCommandComplete();
+    assert(!UiAfterDisplayTransfer(0x5900000,image_b.address,240,320,240,320,1,copy_end,value,control,image_b));
+    FinishUiFrame(image_b.address);assert(displayed.tags==0 && UiRegions(522,240).empty());
     publish(image_a,0);FinishUiFrame(image_a.address);
     assert(UiRegions(522,240).empty() && UiDisplayedImage().address==image_a.address);
     ResetUi();
