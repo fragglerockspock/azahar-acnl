@@ -309,6 +309,24 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     if (!full) ++partial_key_count;
     return true;
 }
+std::vector<UiFill> UiPrepareFills(u32 start,u32 end,u32 value,u32 control) {
+    const UiFill original{start,end,value,control};
+    if (UiPrepareFill(start,end,value,control)) return {{start,end,value,control}};
+    u32 key_start=0,key_end=0;
+    {
+        std::lock_guard lock(ui_mutex);
+        if (!UiEnabled() || !alpha_ready || !clear_phase.active || end<=start ||
+            start>=clear_phase.end || end<=clear_phase.source) return {original};
+        key_start=std::max(start,clear_phase.source);
+        key_end=std::min(end,clear_phase.end);
+    }
+    if (!UiPrepareFill(key_start,key_end,value,control)) return {original};
+    std::vector<UiFill> fills;
+    if (start<key_start) fills.push_back({start,key_start,original.value,original.control});
+    fills.push_back({key_start,key_end,value,control});
+    if (key_end<end) fills.push_back({key_end,end,original.value,original.control});
+    return fills;
+}
 bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
                             u32 output_width,u32 output_height,u32 format,
                             u32& end,u32& value,u32& control,UiImage image) {

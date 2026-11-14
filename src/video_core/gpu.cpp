@@ -501,10 +501,17 @@ void GPU::MemoryFill(u32 index, u32 intr_index) {
         return;
     }
 
-    auto keyed=config;
-    LeafACNL::UiPrepareFill(keyed.GetStartAddress(),keyed.GetEndAddress(),keyed.value_32bit,keyed.control);
-    if (!impl->rasterizer->AccelerateFill(keyed)) {
-        impl->sw_blitter->MemoryFill(keyed);
+    const auto fills=LeafACNL::UiPrepareFills(config.GetStartAddress(),config.GetEndAddress(),
+                                              config.value_32bit,config.control);
+    for (const auto& fill:fills) {
+        auto keyed=config;
+        keyed.address_start=fill.start/8;
+        keyed.address_end=fill.end/8;
+        keyed.value_32bit=fill.value;
+        keyed.control=fill.control;
+        if (!impl->rasterizer->AccelerateFill(keyed)) {
+            impl->sw_blitter->MemoryFill(keyed);
+        }
     }
 
     // Treat fill as texture transfer from VRAM

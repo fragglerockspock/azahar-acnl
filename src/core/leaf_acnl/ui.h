@@ -42,6 +42,10 @@ bool UiAfterDisplayTransfer(u32 source, u32 destination, u32 width, u32 height,
                             u32 output_width, u32 output_height, u32 format,
                             u32& end, u32& value, u32& control, UiImage image = {});
 bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control);
+struct UiFill {
+    u32 start,end,value,control;
+};
+std::vector<UiFill> UiPrepareFills(u32 start,u32 end,u32 value,u32 control);
 void UiPresent(u32 bottom);
 void SetUiAlphaReady(bool ready);
 std::array<float,4> UiKeyPixel(float r, float g, float b, bool preserve_color = false);
