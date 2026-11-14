@@ -120,7 +120,7 @@ private:
 #endif
 
     void LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuffer, ScreenInfo& screen_info,
-                            bool right_eye);
+                            bool right_eye, bool tiled = false);
     void FillScreen(Common::Vec3<u8> color, const TextureInfo& texture);
 
 private:
