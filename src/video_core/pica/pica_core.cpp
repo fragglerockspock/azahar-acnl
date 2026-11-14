@@ -1063,10 +1063,10 @@ bool PicaCore::ProbeLeafUi(bool is_indexed) {
                                       texture.width,texture.height);
         }
     }
-    if (LeafACNL::UiShouldSkipDraw(tags)) return true;
+    const bool skip=LeafACNL::UiShouldSkipDraw(tags);
     LeafACNL::UiRect bounds;
     const auto& pipeline = regs.internal.pipeline;
-    if (tags && pipeline.num_vertices>0 && pipeline.num_vertices<=64 &&
+    if (!skip && tags && pipeline.num_vertices>0 && pipeline.num_vertices<=64 &&
         pipeline.use_gs != PipelineRegs::UseGS::Yes) {
         const PAddr base = pipeline.vertex_attributes.GetPhysicalBaseAddress();
         const auto& indices = pipeline.index_array;
@@ -1111,7 +1111,7 @@ bool PicaCore::ProbeLeafUi(bool is_indexed) {
                       framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()),
                       extent(ui_width),extent(ui_height));
     LeafACNL::UiDraw(regs.internal.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),tags,bounds);
-    return false;
+    return skip;
 }
 
 void PicaCore::DrawArrays(bool is_indexed) {
