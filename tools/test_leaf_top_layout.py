@@ -97,14 +97,39 @@ int main(int argc,char** argv) {
             if(path=="selWin/slct_win.arc")assert(mask_count==2);
             if(path=="Menu/mvmnt_undscrn.arc")assert(mask_count==2);
             if(path=="ItemWin/item_scrn.arc")assert(mask_count==3);
+            if(path=="Title/opng_titl.arc")assert(mask_count==6);
+            const auto before_fade=bytes;
             const auto fade_count=LeafACNL::PatchLeafFade("Layout/"+path,bytes,correction);
             if(path=="Wipe/fade.arc")assert(fade_count==1);
-            else if(path=="Wipe/wipe_circle.arc")assert(fade_count==4);
+            else if(path=="Wipe/wipe_circle.arc")assert(fade_count==1);
             else assert(fade_count==0);
+            if(path=="Wipe/wipe_circle.arc") {
+                size_t differences=0;for(size_t i=0;i<bytes.size();++i)differences+=bytes[i]!=before_fade[i];
+                assert(differences>0 && differences<=8);
+                u32 table=0;std::memcpy(&table,bytes.data()+16,4);
+                u32 count=0;std::memcpy(&count,bytes.data()+table+8,4);
+                for(u32 i=0;i<count;++i) {
+                    u32 entry=0,offset=0,size=0;std::memcpy(&entry,bytes.data()+table+i*12,4);
+                    std::memcpy(&offset,bytes.data()+table+i*12+4,4);std::memcpy(&size,bytes.data()+table+i*12+8,4);
+                    if(entry>>24 || size<20 || std::memcmp(bytes.data()+offset,"CLYT",4))continue;
+                    u16 header=0;std::memcpy(&header,bytes.data()+offset+6,2);
+                    for(size_t p=offset+header;p+76<=offset+size;) {
+                        u32 section=0;std::memcpy(&section,bytes.data()+p+4,4);assert(section>=8);
+                        if(section>=76 && !std::memcmp(bytes.data()+p,"pan1",4) && !std::memcmp(bytes.data()+p+12,"N_wipe_00",9)) {
+                            float x=0,y=0;std::memcpy(&x,bytes.data()+p+60,4);std::memcpy(&y,bytes.data()+p+64,4);
+                            assert(x==y && std::abs(correction*x-1)<.0001f);
+                            assert(std::abs(correction*x/correction-y)<.0001f);
+                        }
+                        if(section>=76 && !std::memcmp(bytes.data()+p,"pic1",4))
+                            assert(std::memcmp(bytes.data()+p,before_fade.data()+p,section)==0);
+                        p+=section;
+                    }
+                }
+            }
             masks+=mask_count;
             ++scanned;changed+=count;
         }
-        assert(scanned>0 && changed>0 && masks==11);
+        assert(scanned>0 && changed>0 && masks==17);
         std::cout<<scanned<<" supplied archives checked; only "<<changed<<" top root scales changed\n";
     }
     std::cout<<"Independent layout scales and visibility-only pane masks passed\n";

@@ -183,10 +183,12 @@ void RendererVulkan::PrepareRendertarget() {
     for (u32 i = 0; i < 3; i++) {
         const u32 fb_id = i == 2 ? 1 : 0;
         auto framebuffer = framebuffer_config[fb_id];
+        bool tiled=false;
         if (i==2 && !render_window.GetFramebufferLayout().bottom_screen_enabled) {
             const auto image=LeafACNL::UiDisplayedImage();
             if(image.Valid()) {
-                framebuffer.address_left1=image.address;framebuffer.address_left2=image.address;
+                framebuffer.address_left1=image.address+image.offset;framebuffer.address_left2=image.address+image.offset;
+                tiled=image.tiled;
                 framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
                 framebuffer.width.Assign(image.width);framebuffer.height.Assign(image.height);
                 framebuffer.stride=image.stride;
@@ -207,7 +209,7 @@ void RendererVulkan::PrepareRendertarget() {
             ConfigureFramebufferTexture(texture, framebuffer);
         }
 
-        LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1);
+        LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1,tiled);
     }
 }
 
@@ -288,7 +290,7 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
 }
 
 void RendererVulkan::LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuffer,
-                                        ScreenInfo& screen_info, bool right_eye) {
+                                        ScreenInfo& screen_info, bool right_eye,bool tiled) {
 
     if (framebuffer.address_right1 == 0 || framebuffer.address_right2 == 0) {
         right_eye = false;
@@ -310,7 +312,7 @@ void RendererVulkan::LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuff
     ASSERT(pixel_stride % 4 == 0);
 
     if (!rasterizer.AccelerateDisplay(framebuffer, framebuffer_addr, static_cast<u32>(pixel_stride),
-                                      screen_info)) {
+                                      screen_info,tiled)) {
         // Reset the screen info's display texture to its own permanent texture
         screen_info.image_view = screen_info.texture.image_view;
         screen_info.texcoords = {0.f, 0.f, 1.f, 1.f};

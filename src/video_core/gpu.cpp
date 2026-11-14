@@ -563,7 +563,7 @@ void GPU::MemoryTransfer() {
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
     }
 
-    LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress());
+    LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress(),!config.is_texture_copy);
     if (!config.is_texture_copy) {
         const auto source=config.GetPhysicalInputAddress();
         u32 end=0;
@@ -573,11 +573,10 @@ void GPU::MemoryTransfer() {
                 config.input_width,config.input_height,config.output_width,config.output_height,
                 static_cast<u32>(config.input_format.Value()),
                 end,keyed.value_32bit,keyed.control,
-                config.scaling==config.NoScale && config.input_linear==config.dont_swizzle &&
-                    !(config.flip_vertically && config.crop_input_lines) ?
-                    LeafACNL::UiImage{config.GetPhysicalOutputAddress(),config.output_width,
-                        config.output_height,config.output_width*BytesPerPixel(config.output_format),
-                        static_cast<u32>(config.output_format.Value())} : LeafACNL::UiImage{})) {
+                LeafACNL::UiTransferImage(config.GetPhysicalOutputAddress(),config.input_width,
+                    config.output_width,config.output_height,static_cast<u32>(config.output_format.Value()),
+                    static_cast<u32>(config.scaling.Value()),config.input_linear,config.dont_swizzle,
+                    config.flip_vertically,config.crop_input_lines))) {
             keyed.address_start=source/8;
             keyed.address_end=end/8;
             if (!impl->rasterizer->AccelerateFill(keyed)) impl->sw_blitter->MemoryFill(keyed);

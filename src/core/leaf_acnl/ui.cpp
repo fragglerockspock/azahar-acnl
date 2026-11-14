@@ -44,6 +44,7 @@ std::atomic_bool alpha_ready{false};
 struct ClearPhase { bool active=false; u32 source=0,end=0,format=0,backdrop=0; };
 ClearPhase clear_phase;
 u64 key_count=0,event_sequence=0;
+u32 image_route=0;
 Frame displayed;
 u64 draw_count = 0, match_count = 0, transfer_count = 0;
 void Union(UiRect& a, UiRect b) {
@@ -137,10 +138,10 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2W REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2X REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
-           " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" A "+(alpha_ready.load() ? "ON" : "OFF")+
+           " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
            " V "+std::to_string(observed_info.view_width)+"X"+std::to_string(observed_info.view_height)+
            " B "+std::to_string(observed_info.width)+"X"+std::to_string(observed_info.height);
 }
@@ -159,7 +160,7 @@ void ResetUi() {
     have_completed=false;
     have_display_copy=false;
     displayed_copies.clear();
-    key_count=event_sequence=0;
+    key_count=event_sequence=0;image_route=0;
     draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
@@ -309,10 +310,15 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
         const auto it=target_info.find(source);
         constexpr std::array<u32,5> pica_format{0,1,3,2,4},pixel_bytes{4,3,2,2,2};
         if (bottom_copy) {
-            if (it!=target_info.end() && source==clear_phase.source && width==it->second.width &&
-                height<=it->second.height && it->second.format==pica_format[format]) {
+            image_route=it==target_info.end() ? 1 : 2;
+            const bool bottom_view=it!=target_info.end() &&
+                (((it->second.view_width==240 || it->second.view_width==256) && it->second.view_height==320) ||
+                 (it->second.view_width==320 && it->second.view_height>=240 && it->second.view_height<=256));
+            if (it!=target_info.end() && (source==clear_phase.source || bottom_view) && width && width<=it->second.width &&
+                height && height<=it->second.height && it->second.format==pica_format[format]) {
                 auto snapshot=targets[source];
-                if(image.Valid() && image.address==destination)snapshot.image=image;
+                if(image.Valid() && image.address==destination) {snapshot.image=image;image_route=4;}
+                else image_route=3;
                 if (!snapshot.sequence) snapshot.sequence=++event_sequence;
                 completed[destination]=snapshot;
                 displayed_copies[destination]=snapshot;last_display_copy=snapshot;have_display_copy=true;
@@ -338,11 +344,21 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
     }
     return UiPrepareFill(source,end,value,control);
 }
-void UiTransfer(u32 source, u32 destination) {
+void UiTransfer(u32 source, u32 destination,bool complete) {
     if (!UiEnabled()) return;
     std::lock_guard lock(ui_mutex);
     ++transfer_count;
     const auto it=targets.find(source);
+    if(!complete) {
+        if(it==targets.end() || source==destination)return;
+        const Frame incoming=it->second;
+        auto& pending=targets[destination];
+        if(pending.sealed)pending={};
+        pending.tags|=incoming.tags;
+        Union(pending.choice,incoming.choice);Union(pending.map,incoming.map);Union(pending.popup,incoming.popup);
+        pending.sequence=std::max(pending.sequence,incoming.sequence);
+        return;
+    }
     if (it==targets.end()) {
         targets.erase(destination);
         completed[destination]={};
@@ -404,7 +420,26 @@ UiImage UiDisplayedImage() {
 bool UiImage::Valid() const {
     constexpr std::array<u32,5> bytes{4,3,2,2,2};
     return address && format<bytes.size() && width && height && width<=1024 && height<=1024 &&
-        stride>=width*bytes[format] && stride<=4096 && u64{address}+u64{stride}*height<=UINT32_MAX;
+        stride>=width*bytes[format] && stride<=4096 &&
+        (!tiled || (width%8==0 && height%8==0)) &&
+        u64{address}+offset+u64{stride}*height<=UINT32_MAX;
+}
+UiImage UiTransferImage(u32 destination,u32 input_width,u32 output_width,u32 output_height,
+                        u32 format,u32 scaling,bool input_linear,bool dont_swizzle,
+                        bool flip_vertically,bool crop_input_lines) {
+    constexpr std::array<u32,5> bytes{4,3,2,2,2};
+    if(format>=bytes.size() || scaling>2 || !output_width || !output_height)return {};
+    UiImage image{destination,scaling ? output_width/2 : output_width,
+                  scaling==2 ? output_height/2 : output_height,0,format};
+    image.stride=image.width*bytes[format];
+    image.tiled=input_linear!=dont_swizzle;
+    if(flip_vertically && crop_input_lines) {
+        if(input_width<output_width)return {};
+        const u64 offset=u64{input_width-output_width}*(output_height-1)*bytes[format];
+        if(offset>UINT32_MAX)return {};
+        image.offset=static_cast<u32>(offset);
+    }
+    return image.Valid() ? image : UiImage{};
 }
 std::array<float,4> UiKeyPixel(float r,float g,float b,bool preserve_color) {
     float spill=std::clamp(std::min(r,b)-g,0.0f,1.0f);

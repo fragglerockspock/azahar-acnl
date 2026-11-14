@@ -14,8 +14,13 @@ struct UiRect {
 };
 struct UiImage {
     u32 address=0,width=0,height=0,stride=0,format=0;
+    bool tiled=false;
+    u32 offset=0;
     bool Valid() const;
 };
+UiImage UiTransferImage(u32 destination,u32 input_width,u32 output_width,u32 output_height,
+                        u32 format,u32 scaling,bool input_linear,bool dont_swizzle,
+                        bool flip_vertically,bool crop_input_lines);
 struct UiRegion {
     UiRect source;
     UiRect destination;
@@ -42,7 +47,7 @@ void SetUiAlphaReady(bool ready);
 std::array<float,4> UiKeyPixel(float r, float g, float b, bool preserve_color = false);
 UiImage UiDisplayedImage();
 void UiDraw(u32 target, u32 tags, UiRect bounds = {});
-void UiTransfer(u32 source, u32 destination);
+void UiTransfer(u32 source, u32 destination, bool complete = true);
 void FinishUiFrame(u32 bottom, bool lcd_blank = false);
 std::vector<UiRegion> UiRegions(float width, float height);
 bool UiTouch(float x, float y, float width, float height, float& touch_x, float& touch_y);

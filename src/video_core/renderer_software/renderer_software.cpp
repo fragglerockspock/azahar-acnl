@@ -45,8 +45,8 @@ void RendererSoftware::LoadFBToScreenInfo(int i, const Pica::ColorFill& color_fi
     auto framebuffer = pica.regs.framebuffer_config[fb_id];
     if (i==2 && !render_window.GetFramebufferLayout().bottom_screen_enabled) {
         const auto image=LeafACNL::UiDisplayedImage();
-        if(image.Valid()) {
-            framebuffer.address_left1=image.address;framebuffer.address_left2=image.address;
+        if(image.Valid() && !image.tiled) {
+            framebuffer.address_left1=image.address+image.offset;framebuffer.address_left2=image.address+image.offset;
             framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
             framebuffer.width.Assign(image.width);framebuffer.height.Assign(image.height);
             framebuffer.stride=image.stride;

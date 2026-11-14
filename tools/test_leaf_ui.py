@@ -358,7 +358,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2W REG ")==0);
+    assert(UiStatus().find("UI FIX 2X REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -387,6 +387,32 @@ int main(int argc,char** argv) {
     ResetUi();
     const auto image_tab=Register("Layout/Menu/menu_tab.arc","my_men_tab_00.bclim",125);
     const auto image_choice=Register("Layout/selWin/slct_win.arc","my_slct_body.bclim",126);
+    UiDraw(0x5100000,image_tab);
+    UiTransfer(0x5100000,0x5200000,false);
+    UiDraw(0x5100000,8,{40,30,200,180});
+    assert(targets[0x5100000].tags==(image_tab|8) && !targets[0x5100000].sealed);
+    UiTransfer(0x5100000,0x5200000,false);
+    assert(targets[0x5200000].tags==(image_tab|8) && !targets[0x5200000].sealed);
+    assert(!have_display_copy);
+    UiTransfer(0x5100000,0x5100000,false);
+    assert(targets[0x5100000].tags==(image_tab|8));
+    for(u32 format=0;format<5;++format)for(u32 scaling=0;scaling<3;++scaling)
+    for(bool linear:{false,true})for(bool swizzle:{false,true}) {
+        const std::array<u32,5> bpp{4,3,2,2,2};
+        const auto image=UiTransferImage(0x5300000,256,240,320,format,scaling,linear,swizzle,true,true);
+        assert(image.Valid() && image.width==(scaling ? 120 : 240) && image.height==(scaling==2 ? 160 : 320));
+        assert(image.tiled==(linear!=swizzle) && image.stride==image.width*bpp[format]);
+        assert(image.offset==16*319*bpp[format]);
+    }
+    assert(!UiTransferImage(0x5300000,200,240,320,1,0,false,false,true,true).Valid());
+    assert(!UiTransferImage(UINT32_MAX-10,256,240,320,1,0,false,false,false,false).Valid());
+    const auto copied=UiTransferImage(0x5600000,256,240,320,1,0,true,false,true,true);
+    UiTarget(0x5700000,256,416,0,240,320);UiDraw(0x5700000,image_tab);
+    UiTransfer(0x5700000,copied.address);
+    assert(!UiAfterDisplayTransfer(0x5700000,copied.address,240,320,240,320,0,copy_end,value,control,copied));
+    FinishUiFrame(0x5800000);
+    assert(UiDisplayedImage().Valid() && UiDisplayedImage().tiled && UiDisplayedImage().offset==15312);
+
     SetUiAlphaReady(true);
     const UiImage image_a{0x5300000,240,320,720,1},image_b{0x5400000,240,320,960,0};
     assert(image_a.Valid() && image_b.Valid());

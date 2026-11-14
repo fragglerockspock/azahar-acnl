@@ -59,7 +59,8 @@ inline size_t PatchLeafPaneMasks(std::string_view path,std::vector<u8>& bytes) {
     const bool tab=path=="Menu/menu_tab.arc",choice=path=="selWin/slct_win.arc";
     const bool wallpaper=path=="Menu/mvmnt_undscrn.arc";
     const bool inventory=path=="ItemWin/item_scrn.arc";
-    if ((!tab && !choice && !wallpaper && !inventory) || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
+    const bool title=path=="Title/opng_titl.arc";
+    if ((!tab && !choice && !wallpaper && !inventory && !title) || bytes.size()<28 || std::memcmp(bytes.data(),"darc",4)) return 0;
     const auto read=[&](size_t p) { u32 value=0;if(p<=bytes.size()-4)std::memcpy(&value,bytes.data()+p,4);return value; };
     const size_t table=read(16);
     if (table>bytes.size()-12) return 0;
@@ -86,7 +87,9 @@ inline size_t PatchLeafPaneMasks(std::string_view path,std::vector<u8>& bytes) {
                 const bool hide=(tab && (pane=="im_tab_05" || pane=="B_back_00" || pane=="P_post_00" || pane=="B_post_00")) ||
                     (choice && (pane=="P_kuchi_00" || pane=="P_kuchi_sh_00")) ||
                     (wallpaper && (pane=="P_base_00" || pane=="P_base_01")) ||
-                    (inventory && (pane=="P_bg_C" || pane=="P_bg_T" || pane=="P_bg_B"));
+                    (inventory && (pane=="P_bg_C" || pane=="P_bg_T" || pane=="P_bg_B")) ||
+                    (title && (pane=="P_bg_00" || pane=="P_bg_01" || pane=="P_bg_02" ||
+                               pane=="P_bg_03" || pane=="P_bg_04" || pane=="P_filter"));
                 if(hide && (bytes[p+8]&1)) {bytes[p+8]&=254;++changes;}
             }
             p+=section;
@@ -117,11 +120,17 @@ inline size_t PatchLeafFade(std::string_view path,std::vector<u8>& bytes,float c
             if(section<8 || section>offset+size-p)break;
             const char* name=reinterpret_cast<const char*>(bytes.data()+p+12);
             const std::string_view pane(name,strnlen(name,24));
-            const bool fill=(fade && pane=="P_fade_00") ||
-                (circle && (pane=="P_L" || pane=="P_R" || pane=="P_T" || pane=="P_B"));
+            if(circle && section>=76 && !std::memcmp(bytes.data()+p,"pan1",4) && pane=="N_wipe_00") {
+                float x=0,y=0;std::memcpy(&x,bytes.data()+p+60,4);std::memcpy(&y,bytes.data()+p+64,4);
+                if(x==1 && y==1 && correction!=1) {
+                    const float scale=1/correction;
+                    std::memcpy(bytes.data()+p+60,&scale,4);std::memcpy(bytes.data()+p+64,&scale,4);++changes;
+                }
+            }
+            const bool fill=fade && pane=="P_fade_00";
             if(section>=76 && !std::memcmp(bytes.data()+p,"pic1",4) && fill) {
                 float width=0;std::memcpy(&width,bytes.data()+p+68,4);
-                if((width==400 || (circle && width==240)) && correction!=1) {
+                if(width==400 && correction!=1) {
                     width/=correction;std::memcpy(bytes.data()+p+68,&width,4);++changes;
                 }
             }
