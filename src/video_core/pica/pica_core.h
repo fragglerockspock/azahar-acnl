@@ -140,6 +140,7 @@ private:
     void DrawImmediate();
 
     void DrawArrays(bool is_indexed);
+    void ProbeLeafUi(bool is_indexed);
 
     void LoadVertices(bool is_indexed);
 

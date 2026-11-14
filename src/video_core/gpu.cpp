@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2023-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -335,6 +336,9 @@ void GPU::SetBufferSwap(u32 screen_id, const Service::GSP::FrameBufferInfo& info
     framebuffer.format = (framebuffer.format & 0xFFFF0000) | (info.format & 0xFFFF);
     framebuffer.active_fb = info.shown_fb & 0xFF;
 
+    if (screen_id==1)
+        LeafACNL::UiPresent(framebuffer.active_fb==0 ? framebuffer.address_left1 : framebuffer.address_left2);
+
     // Notify debugger about the buffer swap.
     if (impl->debug_context) {
         impl->debug_context->OnEvent(Pica::DebugContext::Event::BufferSwapped, nullptr);
@@ -497,9 +501,10 @@ void GPU::MemoryFill(u32 index, u32 intr_index) {
         return;
     }
 
-    // Perform memory fill.
-    if (!impl->rasterizer->AccelerateFill(config)) {
-        impl->sw_blitter->MemoryFill(config);
+    auto keyed=config;
+    LeafACNL::UiPrepareFill(keyed.GetStartAddress(),keyed.GetEndAddress(),keyed.value_32bit,keyed.control);
+    if (!impl->rasterizer->AccelerateFill(keyed)) {
+        impl->sw_blitter->MemoryFill(keyed);
     }
 
     // Treat fill as texture transfer from VRAM
@@ -556,6 +561,26 @@ void GPU::MemoryTransfer() {
         delay = DelayGenerator::CalculateDelayNanoseconds(
             DelayGenerator::GetCopyMode(config.IsInputVRAM(), config.IsOutputVRAM()), true,
             config.input_width * config.input_height * BytesPerPixel(config.input_format));
+    }
+
+    LeafACNL::UiTransfer(config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress(),!config.is_texture_copy);
+    if (!config.is_texture_copy) {
+        const auto source=config.GetPhysicalInputAddress();
+        u32 end=0;
+        Pica::MemoryFillConfig keyed{};
+        keyed.control=1;
+        if (LeafACNL::UiAfterDisplayTransfer(source,config.GetPhysicalOutputAddress(),
+                config.input_width,config.input_height,config.output_width,config.output_height,
+                static_cast<u32>(config.input_format.Value()),
+                end,keyed.value_32bit,keyed.control,
+                LeafACNL::UiTransferImage(config.GetPhysicalOutputAddress(),config.input_width,
+                    config.output_width,config.output_height,static_cast<u32>(config.output_format.Value()),
+                    static_cast<u32>(config.scaling.Value()),config.input_linear,config.dont_swizzle,
+                    config.flip_vertically,config.crop_input_lines))) {
+            keyed.address_start=source/8;
+            keyed.address_end=end/8;
+            if (!impl->rasterizer->AccelerateFill(keyed)) impl->sw_blitter->MemoryFill(keyed);
+        }
     }
 
     // Complete transfer.

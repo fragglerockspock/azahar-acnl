@@ -1,7 +1,11 @@
+#include "core/leaf_acnl/ui.h"
+#include "core/leaf_acnl/tool_ring.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
 
+#include <array>
+#include <cstring>
 #include <list>
 #include <numeric>
 #include <vector>
@@ -68,6 +72,7 @@ public:
 
 CitraLibRetro* emu_instance;
 static bool acnl_single_screen = false;
+static bool UpdateAcNlCameraAspect();
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
@@ -231,6 +236,10 @@ void retro_run() {
         if (acnl_single_screen) {
             Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
             Settings::values.swap_screen = false;
+            Settings::values.aspect_ratio = Settings::AspectRatio::Default;
+            const bool camera_updated = UpdateAcNlCameraAspect();
+            Settings::acnl_widescreen_enabled.store(camera_updated);
+            Settings::values.screen_top_stretch = camera_updated;
         }
         Core::System::GetInstance().ApplySettings();
         emu_instance->emu_window->UpdateLayout();
@@ -399,7 +408,91 @@ static bool IsAnimalCrossingNewLeaf(u64 program_id) {
     }
 }
 
+static std::vector<u32> acnl_camera_addresses;
+
+static float AcNlCameraAspect() {
+    return static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
+           static_cast<float>(Settings::acnl_camera_aspect_height.load());
+}
+
+static bool UpdateAcNlCameraAspect() {
+    if (acnl_camera_addresses.empty()) {
+        return false;
+    }
+    const float aspect = AcNlCameraAspect();
+    u32 aspect_bits{};
+    std::memcpy(&aspect_bits, &aspect, sizeof(aspect_bits));
+    auto& system = Core::System::GetInstance();
+    auto process = system.Kernel().GetCurrentProcess();
+    if (!process) {
+        return false;
+    }
+    for (u32 address : acnl_camera_addresses) {
+        system.Memory().Write32(*process, address, aspect_bits);
+    }
+    LOG_INFO(Frontend, "ACNL camera aspect updated to {} at {} locations",
+             aspect, acnl_camera_addresses.size());
+    return true;
+}
+
+static bool PatchAcNlCameraAspect() {
+    acnl_camera_addresses.clear();
+    auto& system = Core::System::GetInstance();
+    auto process = system.Kernel().GetCurrentProcess();
+    if (!process || !process->codeset) {
+        LOG_WARNING(Frontend, "ACNL widescreen: no active process code set");
+        return false;
+    }
+
+    const auto& code = process->codeset->CodeSegment();
+    const auto& rodata = process->codeset->RODataSegment();
+    if (code.size < 16 || rodata.size < 8 || code.size > 16 * 1024 * 1024 ||
+        rodata.size > 16 * 1024 * 1024) {
+        LOG_WARNING(Frontend, "ACNL widescreen: invalid code or read-only data segment");
+        return false;
+    }
+
+    auto& memory = system.Memory();
+    std::vector<u8> code_bytes(code.size);
+    std::vector<u8> rodata_bytes(rodata.size);
+    memory.ReadBlock(*process, code.addr, code_bytes.data(), code_bytes.size());
+    memory.ReadBlock(*process, rodata.addr, rodata_bytes.data(), rodata_bytes.size());
+
+    const std::array<u32, 4> signature{0x42480000, 0x44dac000, 0x41b00000, 0x3fd55555};
+    std::vector<u32> camera_addresses;
+
+    auto read_word = [](const std::vector<u8>& bytes, std::size_t offset) -> u32 {
+        return static_cast<u32>(bytes[offset]) |
+               (static_cast<u32>(bytes[offset + 1]) << 8) |
+               (static_cast<u32>(bytes[offset + 2]) << 16) |
+               (static_cast<u32>(bytes[offset + 3]) << 24);
+    };
+
+    const auto scan_segment = [&](const std::vector<u8>& bytes, u32 base) {
+        for (std::size_t offset = 0; offset + 16 <= bytes.size(); offset += 4) {
+            bool matches = true;
+            for (std::size_t index = 0; index < signature.size(); ++index) {
+                if (read_word(bytes, offset + index * 4) != signature[index]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                camera_addresses.push_back(base + static_cast<u32>(offset) + 12);
+            }
+        }
+    };
+
+    scan_segment(code_bytes, code.addr);
+    scan_segment(rodata_bytes, rodata.addr);
+
+    acnl_camera_addresses = std::move(camera_addresses);
+    LOG_INFO(Frontend, "ACNL widescreen: camera signature matches {}", acnl_camera_addresses.size());
+    return UpdateAcNlCameraAspect();
+}
+
 static bool do_load_game() {
+    acnl_camera_addresses.clear();
     const Core::System::ResultStatus load_result{
         Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path)};
 
@@ -438,13 +531,20 @@ static bool do_load_game() {
     u64 program_id{};
     Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
     acnl_single_screen = IsAnimalCrossingNewLeaf(program_id);
+    Settings::acnl_widescreen_enabled.store(acnl_single_screen);
     Core::System::GetInstance().GPU().ApplyPerProgramSettings(program_id);
 
     if (acnl_single_screen) {
+        const bool camera_patched = PatchAcNlCameraAspect();
+        Settings::acnl_widescreen_enabled.store(camera_patched);
+        if (!camera_patched) {
+            LOG_WARNING(Frontend, "ACNL widescreen: no camera signature; retaining 5:3 output");
+            LibRetro::DisplayMessage("ACNL widescreen camera patch not found");
+        }
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
         Settings::values.swap_screen = false;
         Settings::values.aspect_ratio = Settings::AspectRatio::Default;
-        Settings::values.screen_top_stretch = false;
+        Settings::values.screen_top_stretch = camera_patched;
         emu_instance->emu_window->UpdateLayout();
         LOG_INFO(Frontend, "Animal Crossing: New Leaf detected (program ID: 0x{:016X})",
                  program_id);
@@ -548,7 +648,11 @@ void retro_reset() {
  */
 bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
+    LeafACNL::ResetToolRing();
+    LeafACNL::ResetUi();
     acnl_single_screen = false;
+    acnl_camera_addresses.clear();
+    Settings::acnl_widescreen_enabled.store(false);
 
 #if CITRA_ARCH(x86_64) && CITRA_HAS_SSE42
     if (!Common::GetCPUCaps().sse4_2) {

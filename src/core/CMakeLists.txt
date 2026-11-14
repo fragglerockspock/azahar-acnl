@@ -478,6 +478,10 @@ add_library(citra_core STATIC EXCLUDE_FROM_ALL
     loader/ncch.h
     loader/smdh.cpp
     loader/smdh.h
+    leaf_acnl/ui.cpp
+    leaf_acnl/ui.h
+    leaf_acnl/tool_ring.cpp
+    leaf_acnl/tool_ring.h
     memory.cpp
     memory.h
     movie.cpp

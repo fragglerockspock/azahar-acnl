@@ -61,6 +61,7 @@ static constexpr const char* use_shader_jit = citra_setting(BaseKeys::use_shader
 static constexpr const char* shaders_accurate_mul = citra_setting(BaseKeys::shaders_accurate_mul);
 static constexpr const char* use_disk_shader_cache = citra_setting(BaseKeys::use_disk_shader_cache);
 static constexpr const char* resolution_factor = citra_setting(BaseKeys::resolution_factor);
+static constexpr const char* acnl_camera_aspect = "citra_acnl_camera_aspect";
 static constexpr const char* texture_filter = citra_setting(BaseKeys::texture_filter);
 static constexpr const char* texture_sampling = citra_setting(BaseKeys::texture_sampling);
 static constexpr const char* custom_textures = citra_setting(BaseKeys::custom_textures);
@@ -375,6 +376,22 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
             { nullptr, nullptr }
         },
         config::enabled
+    },
+    {
+        config::graphics::acnl_camera_aspect,
+        "Animal Crossing: New Leaf Camera Aspect",
+        "ACNL Camera Aspect",
+        "Change the in-game camera field of view and output aspect ratio for Animal Crossing: New Leaf.",
+        nullptr,
+        config::category::graphics,
+        {
+            { "iphone", "iPhone 17 Pro Max (Default)" },
+            { "16:9", "16:9 Widescreen" },
+            { "5:3", "5:3 Original 3DS" },
+            { "4:3", "4:3 Classic" },
+            { nullptr, nullptr }
+        },
+        "iphone"
     },
     {
         config::graphics::resolution_factor,
@@ -1004,6 +1021,20 @@ static void ParseGraphicsOptions(void) {
         LibRetro::FetchVariable(config::graphics::use_disk_shader_cache, config::enabled) ==
         config::enabled;
 
+    const auto acnl_aspect = LibRetro::FetchVariable(config::graphics::acnl_camera_aspect, "iphone");
+    if (acnl_aspect == "16:9") {
+        Settings::acnl_camera_aspect_width.store(16);
+        Settings::acnl_camera_aspect_height.store(9);
+    } else if (acnl_aspect == "5:3") {
+        Settings::acnl_camera_aspect_width.store(5);
+        Settings::acnl_camera_aspect_height.store(3);
+    } else if (acnl_aspect == "4:3") {
+        Settings::acnl_camera_aspect_width.store(4);
+        Settings::acnl_camera_aspect_height.store(3);
+    } else {
+        Settings::acnl_camera_aspect_width.store(522);
+        Settings::acnl_camera_aspect_height.store(240);
+    }
     auto resolution = LibRetro::FetchVariable(config::graphics::resolution_factor, "1");
     Settings::values.resolution_factor = std::stoi(resolution);
 

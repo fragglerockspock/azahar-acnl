@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/logging/log.h"
@@ -27,6 +28,13 @@ void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t 
 /// Calls back to LibRetro to poll input.
 /// @see retro_input_poll_t
 void PollInput();
+bool ToolRingVisible();
+int ToolRingSelected();
+struct ToolRingImage {int width=0,height=0;std::vector<u8> pixels;};
+struct ToolRingVertex {float x,y;u32 color;};
+ToolRingImage BuildToolRingImage(int width,int height);
+std::vector<ToolRingVertex> BuildToolRingVertices(int width,int height);
+void RenderToolRing(int width,int height,void* framebuffer=nullptr,size_t pitch=0);
 
 /// Gets the sensor interface for motion input
 bool GetSensorInterface(struct retro_sensor_interface* sensor_interface);

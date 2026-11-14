@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -6,6 +7,8 @@
 #include <glad/glad.h>
 #endif
 #include <libretro.h>
+#include <algorithm>
+#include <cmath>
 
 #include "audio_core/audio_types.h"
 #include "citra_libretro/citra_libretro.h"
@@ -78,6 +81,7 @@ void EmuWindow_LibRetro::SwapBuffers() {
         if (enableEmulatedPointer && tracker) {
             tracker->Render(width, height);
         }
+        LibRetro::RenderToolRing(width,height);
         LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), 0);
         current_state.Apply();
@@ -165,6 +169,10 @@ void EmuWindow_LibRetro::SwapBuffers() {
             tracker->Render(width, height, data);
         }
 
+        const auto& bottom = renderer.Screen(VideoCore::ScreenId::Bottom);
+        if (layout.top_screen_enabled && !layout.bottom_screen_enabled)
+            LeafACNL::CompositeUi(data,pitch,width,height,bottom.pixels.data(),bottom.pixels.size(),bottom.height);
+        LibRetro::RenderToolRing(width,height,data,pitch);
         LibRetro::UploadVideoFrame(data, static_cast<unsigned>(width),
                                    static_cast<unsigned>(height), pitch);
         if (did_malloc)
@@ -202,6 +210,22 @@ void EmuWindow_LibRetro::PollEvents() {
     }
 
     LibRetro::PollInput();
+
+    if (LeafACNL::UiEnabled() && !GetFramebufferLayout().bottom_screen_enabled) {
+        const bool pressed = LibRetro::settings.enable_touch_touchscreen && !LibRetro::ToolRingVisible() &&
+            LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_PRESSED);
+        float tx=0,ty=0;
+        const float x = (LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_X)+32767)/65534.0f*width;
+        const float y = (LibRetro::CheckInput(0,RETRO_DEVICE_POINTER,0,RETRO_DEVICE_ID_POINTER_Y)+32767)/65534.0f*height;
+        if (pressed && LeafACNL::UiTouch(x,y,width,height,tx,ty)) {
+            TouchNormalized(tx,ty);
+            hasTouched = true;
+        } else if (hasTouched) {
+            TouchReleased();
+            hasTouched = false;
+        }
+        return;
+    }
 
     // TODO: Poll for right click for motion emu
 
@@ -251,6 +275,12 @@ LayoutGeometry ComputeLayoutGeometry() {
             baseX = Core::kScreenTopWidth;
             baseY = Core::kScreenTopHeight;
             emulated_pointer = false;
+        }
+        if (!swapped && Settings::acnl_widescreen_enabled.load()) {
+            baseX = static_cast<unsigned>(
+                (static_cast<u64>(baseY) * Settings::acnl_camera_aspect_width.load() +
+                 Settings::acnl_camera_aspect_height.load() / 2) /
+                Settings::acnl_camera_aspect_height.load());
         }
         baseX *= scaling;
         baseY *= scaling;

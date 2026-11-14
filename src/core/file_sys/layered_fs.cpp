@@ -1,3 +1,5 @@
+#include "core/leaf_acnl/ui.h"
+#include "core/leaf_acnl/top_layout_scale.h"
 // Copyright 2020-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -13,6 +15,8 @@
 #include "common/swap.h"
 #include "core/file_sys/layered_fs.h"
 #include "core/file_sys/patch.h"
+#include "common/settings.h"
+#include "core/leaf_acnl/tool_ring.h"
 
 SERIALIZE_EXPORT_IMPL(FileSys::LayeredFS)
 
@@ -57,9 +61,11 @@ static_assert(sizeof(FileMetadata) == 0x20, "Size of FileMetadata is not correct
 LayeredFS::LayeredFS() = default;
 
 LayeredFS::LayeredFS(std::shared_ptr<RomFSReader> romfs_, std::string patch_path_,
-                     std::string patch_ext_path_, bool load_relocations_)
+                     std::string patch_ext_path_, bool load_relocations_,
+                     bool acnl_ui_patch_)
     : romfs(std::move(romfs_)), patch_path(std::move(patch_path_)),
-      patch_ext_path(std::move(patch_ext_path_)), load_relocations(load_relocations_) {
+      patch_ext_path(std::move(patch_ext_path_)), load_relocations(load_relocations_),
+      acnl_ui_patch(acnl_ui_patch_) {
     Load();
 }
 
@@ -75,6 +81,48 @@ void LayeredFS::Load() {
     if (load_relocations) {
         LoadRelocations();
         LoadExtRelocations();
+    }
+
+    if (acnl_ui_patch) {
+        for (const auto& [path,file] : file_path_map) {
+            if ((!LeafACNL::IsToolIconArchivePath(path) && !LeafACNL::IsUiArchivePath(path)) || file->relocation.size>4*1024*1024) continue;
+            std::vector<u8> bytes(file->relocation.size);
+            if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) {
+                if (LeafACNL::IsToolIconArchivePath(path)) LeafACNL::SetToolIconArchive(bytes);
+                else LeafACNL::RegisterUiArchive(path,bytes);
+            }
+        }
+        const float aspect = static_cast<float>(Settings::acnl_camera_aspect_width.load()) /
+                             static_cast<float>(Settings::acnl_camera_aspect_height.load());
+        const float correction = (400.0f / 240.0f) / aspect;
+        if (correction > 0.0f && correction < 2.0f) {
+            std::size_t patched_panes = 0;
+            for (auto& [path, file] : file_path_map) {
+                if (path.find("Layout/") == std::string::npos ||
+                    path.size() < 4 || path.substr(path.size() - 4) != ".arc" ||
+                    file->relocation.type != 0 || file->relocation.size > 4 * 1024 * 1024) {
+                    continue;
+                }
+                std::vector<u8> bytes(file->relocation.size);
+                if (romfs->ReadFile(file->relocation.original_offset, bytes.size(),
+                                    bytes.data()) != bytes.size()) {
+                    continue;
+                }
+                if (bytes.size() < 80 || std::memcmp(bytes.data(), "darc", 4) != 0) {
+                    continue;
+                }
+                const auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction)+
+                                     LeafACNL::PatchLeafPaneMasks(path,bytes)+
+                                     LeafACNL::PatchLeafFade(path,bytes,correction);
+                if (changes != 0) {
+                    file->relocation.type = 2;
+                    file->relocation.patched_file = std::move(bytes);
+                    patched_panes += changes;
+                }
+            }
+            LOG_INFO(Service_FS, "ACNL layout compensation applied to {} root panes",
+                     patched_panes);
+        }
     }
 
     RebuildMetadata();

@@ -82,12 +82,13 @@ struct VSUniformData {
     };
     u32 freecam_skip_2d{1};
 #endif
+    float widescreen_scale{1.0f};
 };
 #ifdef ENABLE_FREECAM
-static_assert(sizeof(VSUniformData) == 112,
+static_assert(sizeof(VSUniformData) == 128,
               "The size of the VSUniformData does not match the structure in the shader");
 #else
-static_assert(sizeof(VSUniformData) == 32,
+static_assert(sizeof(VSUniformData) == 48,
               "The size of the VSUniformData does not match the structure in the shader");
 #endif
 static_assert(sizeof(VSUniformData) < 16384,

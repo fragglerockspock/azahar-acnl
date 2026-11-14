@@ -10,6 +10,7 @@ add_library(citra_libretro_common OBJECT
         input/mouse_tracker.cpp
         input/mouse_tracker.h
         $<$<BOOL:${ENABLE_VULKAN}>: libretro_vk.cpp libretro_vk.h>
+        tool_ring_overlay.cpp
         environment.cpp
         environment.h
         core_settings.cpp

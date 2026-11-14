@@ -1,3 +1,5 @@
+#include <cmath>
+#include "core/leaf_acnl/ui.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -366,6 +368,7 @@ void PicaCore::ProcessCmdList(PAddr list, u32 size, bool ignore_list) [[hot]] {
             }
         }
     }
+    LeafACNL::UiCommandComplete();
 }
 
 static bool any_byte_match(u32 a, u32 b) {
@@ -1044,7 +1047,73 @@ void PicaCore::DrawImmediate() {
     }
 }
 
+void PicaCore::ProbeLeafUi(bool is_indexed) {
+    if (!LeafACNL::UiEnabled()) return;
+    const auto& texturing = regs.internal.texturing;
+    u32 tags = 0;
+    if (texturing.main_config.texture0_enable &&
+        static_cast<u32>(texturing.texture0_format.Value()) <= 13) {
+        const auto& texture = texturing.texture0;
+        const size_t size = LeafACNL::UiTextureSize(
+            static_cast<u32>(texturing.texture0_format.Value()),texture.width,texture.height);
+        const PAddr address = texture.GetPhysicalAddress();
+        const auto region = memory.GetPhysicalRef(address);
+        if (size && size<=4*1024*1024 && region && size<=region.GetSize()) {
+            tags = LeafACNL::UiTexture(region.GetPtr(),size,
+                                      texture.width,texture.height);
+        }
+    }
+    LeafACNL::UiRect bounds;
+    const auto& pipeline = regs.internal.pipeline;
+    if (tags && pipeline.num_vertices>0 && pipeline.num_vertices<=64 &&
+        pipeline.use_gs != PipelineRegs::UseGS::Yes) {
+        const PAddr base = pipeline.vertex_attributes.GetPhysicalBaseAddress();
+        const auto& indices = pipeline.index_array;
+        const u8* index8 = memory.GetPhysicalPointer(base+indices.offset);
+        const auto* index16 = reinterpret_cast<const u16*>(index8);
+        if (memory.GetPhysicalPointer(base) && (!is_indexed || index8)) {
+            const auto loader = VertexLoader(memory,pipeline);
+            ShaderUnit unit;
+            AttributeBuffer output;
+            shader_engine->SetupBatch(vs_setup,regs.internal.vs.main_offset);
+            const auto& raster = regs.internal.rasterizer;
+            const float hw = f24::FromRaw(raster.viewport_size_x).ToFloat32();
+            const float hh = f24::FromRaw(raster.viewport_size_y).ToFloat32();
+            float minx=1e9f,miny=1e9f,maxx=-1e9f,maxy=-1e9f;
+            for (u32 i=0;i<pipeline.num_vertices;++i) {
+                const u32 vertex = is_indexed ? (indices.format ? index16[i] : index8[i]) : i+pipeline.vertex_offset;
+                AttributeBuffer input;
+                loader.LoadVertex(base,i,vertex,input,input_default_attributes);
+                unit.LoadInput(regs.internal.vs,input);
+                shader_engine->Run(vs_setup,unit);
+                unit.WriteOutput(regs.internal.vs,output);
+                const auto pos = OutputVertex(raster,output).pos;
+                const float w = pos.w.ToFloat32();
+                if (w<=0 || !std::isfinite(w)) continue;
+                const float x = raster.viewport_corner.x+hw*(pos.x.ToFloat32()/w+1);
+                const float y = raster.viewport_corner.y+hh*(pos.y.ToFloat32()/w+1);
+                if (!std::isfinite(x) || !std::isfinite(y)) continue;
+                minx=std::min(minx,x); maxx=std::max(maxx,x);
+                miny=std::min(miny,y); maxy=std::max(maxy,y);
+            }
+            if (minx<maxx && miny<maxy) bounds=LeafACNL::UiLandscapeBounds({minx,miny,maxx,maxy});
+        }
+    }
+    const auto& framebuffer=regs.internal.framebuffer.framebuffer;
+    const auto& ui_raster=regs.internal.rasterizer;
+    const float ui_width=2*f24::FromRaw(ui_raster.viewport_size_x).ToFloat32();
+    const float ui_height=2*f24::FromRaw(ui_raster.viewport_size_y).ToFloat32();
+    const auto extent=[](float value) -> u32 {
+        return std::isfinite(value) && value>0 && value<=4096 ? static_cast<u32>(std::lround(value)) : 0;
+    };
+    LeafACNL::UiTarget(framebuffer.GetColorBufferPhysicalAddress(),framebuffer.GetWidth(),
+                      framebuffer.GetHeight(),static_cast<u32>(framebuffer.color_format.Value()),
+                      extent(ui_width),extent(ui_height));
+    LeafACNL::UiDraw(regs.internal.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),tags,bounds);
+}
+
 void PicaCore::DrawArrays(bool is_indexed) {
+    ProbeLeafUi(is_indexed);
     MICROPROFILE_SCOPE(GPU_Drawing);
 
     // Track vertex in the debug recorder.

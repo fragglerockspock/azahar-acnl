@@ -114,9 +114,13 @@ private:
     void ApplySecondLayerOpacity(float alpha);
 
     void DrawCursor(const Layout::FramebufferLayout& layout);
+#ifdef HAVE_LIBRETRO
+    void DrawLeafUi(const Layout::FramebufferLayout& layout);
+    void DrawToolRing(const Layout::FramebufferLayout& layout);
+#endif
 
     void LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuffer, ScreenInfo& screen_info,
-                            bool right_eye);
+                            bool right_eye, bool tiled = false);
     void FillScreen(Common::Vec3<u8> color, const TextureInfo& texture);
 
 private:
@@ -141,6 +145,7 @@ private:
     std::array<vk::ShaderModule, PRESENT_PIPELINES> present_shaders;
     std::array<vk::Sampler, 2> present_samplers;
     vk::ShaderModule present_vertex_shader;
+    vk::Pipeline leaf_alpha_pipeline{};
     u32 current_pipeline = 0;
 
     std::array<ScreenInfo, 3> screen_infos{};
@@ -150,6 +155,11 @@ private:
     vk::ShaderModule cursor_vertex_shader{};
     vk::ShaderModule cursor_fragment_shader{};
     vk::Pipeline cursor_pipeline{};
+#ifdef HAVE_LIBRETRO
+    vk::Pipeline tool_ring_pipeline{};
+    vk::ShaderModule tool_ring_vertex_shader{},tool_ring_fragment_shader{};
+    std::unique_ptr<StreamBuffer> tool_ring_buffer;
+#endif
     vk::UniquePipelineLayout cursor_pipeline_layout{};
     bool isSecondaryWindow;
     bool secondaryWindowEnabled;

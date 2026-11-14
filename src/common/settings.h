@@ -19,6 +19,10 @@
 
 namespace Settings {
 
+inline std::atomic<bool> acnl_widescreen_enabled{false};
+inline std::atomic<u32> acnl_camera_aspect_width{522};
+inline std::atomic<u32> acnl_camera_aspect_height{240};
+
 enum class GraphicsAPI {
     Software = 0,
     OpenGL = 1,
