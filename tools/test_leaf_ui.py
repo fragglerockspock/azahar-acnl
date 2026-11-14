@@ -209,8 +209,10 @@ int main(int argc,char** argv) {
         assert(copy_end==end && value==key_values[format]);
         UiTarget(address,256,416,format,240,320);UiDraw(address,tab);
         value=0;control=0x80000000;
-        assert(!UiPrepareFill(address+8,end,value,control));
-        assert(!UiPrepareFill(address,end-8,value,control));
+        const auto retained=targets[address];
+        assert(UiPrepareFill(address+8,end,value,control) && value==key_values[format]);
+        assert(UiPrepareFill(address,end-8,value,control) && value==key_values[format]);
+        assert(targets[address].tags==retained.tags && targets[address].sequence==retained.sequence);
         assert(!UiPrepareFill(address,end+8,value,control));
         assert(UiPrepareFill(address,end,value,control) && value==key_values[format]);
         UiDraw(address,hud);UiCommandComplete();UiTransfer(address,0x3100000);
@@ -358,7 +360,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2X REG ")==0);
+    assert(UiStatus().find("UI FIX 2Z REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -437,6 +439,53 @@ int main(int argc,char** argv) {
     FinishUiFrame(image_b.address);assert(UiDisplayedImage().address==image_b.address);
     publish(image_a,0);FinishUiFrame(image_a.address);
     assert(UiRegions(522,240).empty() && UiDisplayedImage().address==image_a.address);
+    ResetUi();
+    const auto transition_choice=Register("Layout/selWin/slct_win.arc","my_slct_body.bclim",140);
+    const auto transition_inventory=Register("Layout/ItemWin/item_scrn.arc","my_itm_leaf.bclim",141);
+    const auto transition_title=Register("Layout/selWin/cmn_slct_win.arc","my_csw_LT.bclim",142);
+    SetUiAlphaReady(true);
+    const u32 untracked_source=0x6900000,transition_lcd=0x6a00000;
+    const auto begin_bottom=[&]() {
+        UiTarget(scratch,256,416,0,240,400);UiDraw(scratch,0);UiTransfer(scratch,top_lcd);
+        assert(UiAfterDisplayTransfer(scratch,top_lcd,256,416,240,400,0,copy_end,value,control));
+        UiTarget(scratch,256,416,0,240,320);
+    };
+    const auto end_bottom=[&]() {
+        UiCommandComplete();UiTransfer(untracked_source,transition_lcd);
+        assert(!UiAfterDisplayTransfer(untracked_source,transition_lcd,256,320,240,320,0,copy_end,value,control,image_b));
+        FinishUiFrame(transition_lcd);
+        assert(image_route==5 && !UiDisplayedImage().Valid());
+    };
+    for(int frame=0;frame<60;++frame) {
+        begin_bottom();
+        const float extent=static_cast<float>(frame<30 ? frame+1 : 60-frame);
+        const UiRect bounds{160-extent*3,110-extent,160+extent*3,110+extent};
+        UiDraw(scratch,transition_choice,bounds);
+        value=0;control=0;
+        assert(UiPrepareFill(scratch+256*64*4,scratch+256*80*4,value,control) && value==0xff00ffff);
+        end_bottom();
+        const auto region=UiRegions(522,240);
+        assert(region.size()==1);
+        check_rect(region[0].source,Crop(bounds,3));
+        const auto expected=Region(Crop(bounds,3),522,240,.965f,.54f,1,1,.8f);
+        check_rect(region[0].destination,expected.destination);
+        UiDraw(scratch,transition_inventory);UiCommandComplete();
+        FinishUiFrame(transition_lcd);assert(displayed.tags==transition_choice);
+    }
+    begin_bottom();UiDraw(scratch,transition_choice);end_bottom();
+    assert(UiRegions(522,240).empty());
+    begin_bottom();UiDraw(scratch,transition_choice,{500,500,510,510});end_bottom();
+    assert(UiRegions(522,240).empty());
+    begin_bottom();UiDraw(scratch,transition_inventory);end_bottom();
+    assert(displayed.tags==transition_inventory && UiRegions(522,240).size()==4);
+    begin_bottom();UiDraw(scratch,transition_title);end_bottom();
+    assert(UiRegions(522,240).size()==1);
+    begin_bottom();end_bottom();
+    assert(displayed.tags==0 && UiRegions(522,240).empty());
+    UiDraw(scratch,transition_title);UiCommandComplete();FinishUiFrame(transition_lcd);
+    assert(UiRegions(522,240).empty());
+    begin_bottom();UiDraw(scratch,0);end_bottom();
+    assert(UiRegions(522,240).empty());
     ResetUi();
     assert(!UiEnabled() && UiRegions(522,240).empty());
     if(argc>1) {

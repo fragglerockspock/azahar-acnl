@@ -43,7 +43,8 @@ bool have_completed=false;
 std::atomic_bool alpha_ready{false};
 struct ClearPhase { bool active=false; u32 source=0,end=0,format=0,backdrop=0; };
 ClearPhase clear_phase;
-u64 key_count=0,event_sequence=0;
+Frame bottom_pending;
+u64 key_count=0,event_sequence=0,partial_key_count=0;
 u32 image_route=0;
 Frame displayed;
 u64 draw_count = 0, match_count = 0, transfer_count = 0;
@@ -138,9 +139,9 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2X REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2Z REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
-           " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+
+           " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
            " V "+std::to_string(observed_info.view_width)+"X"+std::to_string(observed_info.view_height)+
            " B "+std::to_string(observed_info.width)+"X"+std::to_string(observed_info.height);
@@ -157,10 +158,11 @@ void ResetUi() {
     last_completed=observed_pending=observed_completed=last_display_copy={};
     observed_info={};
     clear_phase={};
+    bottom_pending={};
     have_completed=false;
     have_display_copy=false;
     displayed_copies.clear();
-    key_count=event_sequence=0;image_route=0;
+    key_count=event_sequence=partial_key_count=0;image_route=0;
     draw_count = match_count = transfer_count = 0;
 }
 bool IsUiArchivePath(std::string_view path) {
@@ -242,6 +244,7 @@ void UiDraw(u32 target, u32 tags, UiRect bounds) {
     if (tags&Choice) Union(frame.choice,bounds);
     if (tags&HudMap) Union(frame.map,bounds);
     if (tags&(ItemPopup|Dialog)) Union(frame.popup,bounds);
+    if (clear_phase.active && target==clear_phase.source) bottom_pending=frame;
     const bool top_view=(info.view_width==400 && info.view_height==240) ||
                         (info.view_width==240 && info.view_height==400);
     if (((tags&(Tab|Map|Choice|TitleMenu|Inventory|ItemPopup|Dialog)) || title_pair) && !top_view) {
@@ -279,15 +282,20 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     if (!UiEnabled() || end<=start) return false;
     std::lock_guard lock(ui_mutex);
     const auto it=target_info.find(start);
-    if (it==target_info.end() || !it->second.size ||
-        (u64{end}!=u64{start}+it->second.size &&
-         (!it->second.key_size || u64{end}!=u64{start}+it->second.key_size) &&
-         (!clear_phase.active || start!=clear_phase.source || end!=clear_phase.end))) return false;
-    targets[start]={};
-    targets[start].sequence=++event_sequence;
-    if (!alpha_ready || !clear_phase.active || start!=clear_phase.source || end>clear_phase.end)
-        return false;
-    targets[start].tags=clear_phase.backdrop;
+    const bool full=it!=target_info.end() && it->second.size &&
+        (u64{end}==u64{start}+it->second.size ||
+         (it->second.key_size && u64{end}==u64{start}+it->second.key_size) ||
+         (clear_phase.active && start==clear_phase.source && end==clear_phase.end));
+    if (full) {
+        targets[start]={};
+        targets[start].sequence=++event_sequence;
+    }
+    const bool contained=clear_phase.active && start>=clear_phase.source && end<=clear_phase.end;
+    if (!alpha_ready || !contained) return false;
+    if (full) {
+        targets[start].tags=clear_phase.backdrop;
+        if (start==clear_phase.source) bottom_pending=targets[start];
+    }
     control &= ~0x300u;
     switch(clear_phase.format) {
     case 0: value=0xff00ffff;control|=0x200;break;
@@ -298,6 +306,7 @@ bool UiPrepareFill(u32 start, u32 end, u32& value, u32& control) {
     default:return false;
     }
     ++key_count;
+    if (!full) ++partial_key_count;
     return true;
 }
 bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
@@ -325,6 +334,13 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
                 last_completed=snapshot;have_completed=true;
                 const u64 copied=u64{width}*height*pixel_bytes[format];
                 if (copied<=it->second.size)it->second.key_size=static_cast<size_t>(copied);
+            }
+            if (image_route==1 && clear_phase.active && bottom_pending.sequence) {
+                const auto snapshot=bottom_pending;
+                completed[destination]=snapshot;
+                displayed_copies[destination]=snapshot;last_display_copy=snapshot;have_display_copy=true;
+                last_completed=snapshot;have_completed=true;
+                image_route=5;
             }
             clear_phase.active=false;
             return false;
@@ -462,7 +478,10 @@ std::vector<UiRegion> UiRegions(float width, float height) {
     if (tags&Choice) {
         if ((tags&Map) && !(tags&HudButton))
             return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.52f)};
-        const auto source = displayed.choice.Valid() ? Crop(displayed.choice,3) : UiRect{40,1,280,216};
+        if (!displayed.choice.Valid()) return {};
+        auto source=Crop(displayed.choice,3);
+        source.top=std::max(1.0f,source.top);
+        if (source.right-source.left<4 || source.bottom-source.top<4) return {};
         return {Region(source,width,height,.965f,.54f,1,1,.8f)};
     }
     if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))
