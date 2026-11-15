@@ -140,7 +140,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2AA REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AB REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -507,7 +507,7 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         if (source.right-source.left<4 || source.bottom-source.top<4) return {};
         const auto region=Region(source,width,height,.965f,.54f,1,1,.8f);
         auto sample=source;
-        sample.top=std::max(1.0f,sample.top-13);
+        sample.top=1;
         return {Slice(region,sample)};
     }
     if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))

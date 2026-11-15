@@ -20,7 +20,9 @@ ToolRingImage BuildToolRingImage(int width,int height) {
     if (!ToolRingVisible() || width <= 0 || height <= 0)
         return {};
     const auto tools = LeafACNL::Tools();
-    const int h = 360, w = std::max(1, width * h / height);
+    const int h = std::clamp(height,360,1440);
+    const int w = static_cast<int>(std::clamp(static_cast<long long>(width)*h/height,1LL,7680LL));
+    const int unit=std::max(1,static_cast<int>(std::lround(h/360.0)));
     std::vector<u8> image(static_cast<size_t>(w) * h * 4);
     for (size_t i = 0; i < image.size(); i += 4) {
         image[i] = 12;
@@ -43,10 +45,16 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         image[offset + 3] = static_cast<u8>(combined);
     };
     auto circle = [&](double cx, double cy, double radius, std::array<u8, 4> color) {
-        for (int y = static_cast<int>(cy - radius); y <= cy + radius; ++y)
-            for (int x = static_cast<int>(cx - radius); x <= cx + radius; ++x)
-                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= radius * radius)
-                    pixel(x, y, color);
+        const double inner=std::max(0.0,radius-.5),outer=radius+.5;
+        for (int y=static_cast<int>(std::floor(cy-radius-1));y<=cy+radius+1;++y)
+            for (int x=static_cast<int>(std::floor(cx-radius-1));x<=cx+radius+1;++x) {
+                const double dx=x+.5-cx,dy=y+.5-cy,distance=dx*dx+dy*dy;
+                if (distance>=outer*outer) continue;
+                const double coverage=distance<=inner*inner ? 1 : std::clamp(outer-std::sqrt(distance),0.0,1.0);
+                auto edge=color;
+                edge[3]=static_cast<u8>(std::lround(color[3]*coverage));
+                pixel(x,y,edge);
+            }
     };
     for (int i = 0; !tools.empty() && i < 8; ++i) {
         const double angle = i * 3.141592653589793 / 4 - 3.141592653589793 / 2;
@@ -92,10 +100,9 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             }
         if (tools[i].slot < 0) {
             circle(cx - radius * 0.68, cy - radius * 0.68, radius * 0.3, {45, 165, 100, 255});
-            for (int t = 0; t < 7; ++t) {
-                pixel(static_cast<int>(cx - radius * 0.68) - 3 + t,
-                      static_cast<int>(cy - radius * 0.68) + 3 - t, {255, 255, 255, 255});
-            }
+            for (int t=0;t<7*unit;++t)
+                circle(cx-radius*.68-3*unit+t,cy-radius*.68+3*unit-t,
+                       std::max(.5,unit*.55),{255,255,255,255});
         }
     }
     {
@@ -130,10 +137,13 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         };
         if (tools.empty()) {
             const auto message=LeafACNL::ToolRingStatus();
-            const int scale=std::max(1,std::min(2,(w-24)/std::max(1,static_cast<int>(message.size())*6)));
+            const int scale=std::max(1,std::min(2*unit,(w-24*unit)/std::max(1,static_cast<int>(message.size())*6)));
             text(message,h/2,scale);
         }
-        text(LeafACNL::UiStatus(),8,1);
+        const auto status=LeafACNL::UiStatus();
+        const int diagnostic_scale=std::max(1,std::min(unit,(w-24*unit)/
+            std::max(1,static_cast<int>(status.size())*6)));
+        text(status,8*unit,diagnostic_scale);
     }
     return {w,h,std::move(image)};
 }

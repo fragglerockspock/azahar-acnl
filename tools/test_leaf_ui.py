@@ -129,7 +129,7 @@ int main(int argc,char** argv) {
     UiTransfer(100,201);
     FinishUiFrame(201);
     regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==89 && regions[0].source.bottom==233);
+    assert(regions.size()==1 && regions[0].source.left==97 && regions[0].source.top==1 && regions[0].source.bottom==233);
     assert(regions[0].destination.right==504 && regions[0].destination.bottom==130);
     UiDraw(100,0);
     UiTransfer(100,200);
@@ -368,7 +368,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2AA REG ")==0);
+    assert(UiStatus().find("UI FIX 2AB REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -474,7 +474,7 @@ int main(int argc,char** argv) {
         end_bottom();
         const auto region=UiRegions(522,240);
         assert(region.size()==1);
-        auto guarded_source=Crop(bounds,3);guarded_source.top-=13;
+        auto guarded_source=Crop(bounds,3);guarded_source.top=1;
         check_rect(region[0].source,guarded_source);
         const auto expected=Region(Crop(bounds,3),522,240,.965f,.54f,1,1,.8f);
         check_rect(region[0].destination,Slice(expected,guarded_source).destination);
@@ -510,7 +510,7 @@ int main(int argc,char** argv) {
         assert(regions.size()==1);
         const auto original=Region(Crop(bounds,3),522,240,.965f,.54f,1,1,.8f);
         const auto guarded=regions[0];
-        assert(guarded.source.top==bounds.top-16);
+        assert(guarded.source.top==1);
         assert(guarded.source.left==original.source.left && guarded.source.right==original.source.right);
         assert(guarded.destination.left==original.destination.left && guarded.destination.right==original.destination.right);
         assert(guarded.destination.bottom==original.destination.bottom);
