@@ -148,7 +148,8 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             const auto& tool=tools[visual.selected];
             const auto name=ToolRingName(tool);
             const int scale=std::max(1,static_cast<int>(std::lround(h/360.0)));
-            const int half=std::min(w/2-8,static_cast<int>(name.size())*3*scale+12*scale);
+            const std::string action=tool.slot<0 ? "A PUT AWAY" : "A EQUIP";
+            const int half=std::min(w/2-8,static_cast<int>(std::max(name.size(),action.size()))*3*scale+12*scale);
             const int top=static_cast<int>(h*.15),bottom=top+30*scale;
             const int corner=6*scale;
             for(int y=top;y<bottom;++y) {
@@ -159,7 +160,7 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             for(int y=0;y<5*scale;++y)for(int x=w/2-(5*scale-y);x<w/2+(5*scale-y);++x)
                 pixel(x,bottom+y,{44,178,158,245});
             text(name,top+4*scale,scale,w/2);
-            text(tool.slot<0 ? "A PUT AWAY" : "A EQUIP",top+17*scale,scale,w/2);
+            text(action,top+17*scale,scale,w/2);
             text("B CANCEL",static_cast<int>(h*.88),scale,w/2);
         }
         if(prompt) {
