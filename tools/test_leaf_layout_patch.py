@@ -58,7 +58,7 @@ int main(int argc,char** argv) {
     assert(Float(layout.sections[graft],68)==180 && Float(layout.sections[graft],72)==64);
     assert(Find(result,"anim/opng_titl_00_out.bclan")->bytes==Animation());
     for(const auto name:{"anim/opng_titl_00_in.bclan","anim/opng_titl_00_loop.bclan"}) {
-        const auto& b=Find(result,name)->bytes;assert(std::search(b.begin(),b.end(),"N_leaf_press","N_leaf_press"+12)!=b.end());
+        const auto& b=Find(result,name)->bytes;const std::string needle="N_leaf_press";assert(std::search(b.begin(),b.end(),needle.begin(),needle.end())!=b.end());
         assert(!RetargetAnimation(Find(result,name)->bytes,"T_tex_00","N_leaf_press"));
     }
     donor_entries.pop_back();auto missing=WriteArc(donor_entries);auto unchanged=original;
@@ -81,7 +81,7 @@ int main(int argc,char** argv) {
 }
 ''')
     sanitizer=["-fsanitize=address,undefined","-fno-omit-frame-pointer"] if os.environ.get("LEAF_SANITIZE") else []
-    subprocess.run(["g++","-std=c++17","-Wall","-Wextra","-Werror"]+sanitizer+["-I"+str(root/"src"),str(source),"-o",str(folder/"test")],check=True)
+    subprocess.run([os.environ.get("CXX","g++"),"-std=c++17","-Wall","-Wextra","-Werror"]+sanitizer+["-I"+str(root/"src"),str(source),"-o",str(folder/"test")],check=True)
     arguments=[str(folder/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
