@@ -67,6 +67,47 @@ u32 Branch(u32 from, u32 to, bool link = false) {
     return (link ? 0xeb000000 : 0xea000000) | (((to - from - 8) >> 2) & 0xffffff);
 }
 }
+namespace {
+std::shared_ptr<const std::vector<u8>> overlay_font;
+}
+bool IsOverlayFontPath(std::string_view path) {
+    constexpr std::string_view name="Garden_msg_size16.bcfnt";
+    if(path.size()>=name.size() && path.substr(path.size()-name.size())==name)return true;
+    return path.size()>4 && path.substr(path.size()-4)==".arc" &&
+        (path.find("Font")!=std::string_view::npos || path.find("font")!=std::string_view::npos);
+}
+std::shared_ptr<const std::vector<u8>> OverlayFontBytes() {
+    std::lock_guard lock(mutex);
+    return overlay_font;
+}
+void SetOverlayFont(const std::vector<u8>& bytes) {
+    if(bytes.size()<20 || bytes.size()>16*1024*1024)return;
+    if(!std::memcmp(bytes.data(),"CFNT",4)) {
+        std::lock_guard lock(mutex);
+        overlay_font=std::make_shared<const std::vector<u8>>(bytes);
+        LOG_INFO(Core,"Leaf overlay Garden font loaded: {} bytes",bytes.size());
+        return;
+    }
+    if(std::memcmp(bytes.data(),"darc",4) || bytes.size()<28)return;
+    const auto read=[&](size_t p)->u32 {u32 v=0;if(p<=bytes.size()-4)std::memcpy(&v,bytes.data()+p,4);return v;};
+    const size_t table=read(16);
+    if(table>bytes.size()-12)return;
+    const size_t count=read(table+8);
+    if(!count || count>(bytes.size()-table)/12)return;
+    const size_t names=table+count*12;
+    for(size_t i=0;i<count;++i) {
+        const u32 entry=read(table+i*12);
+        if(entry>>24)continue;
+        size_t p=names+(entry&0xffffff);
+        std::string name;
+        while(p+1<bytes.size() && bytes[p] && !bytes[p+1] && name.size()<128){name+=static_cast<char>(bytes[p]);p+=2;}
+        if(name!="Garden_msg_size16.bcfnt")continue;
+        const size_t offset=read(table+i*12+4),size=read(table+i*12+8);
+        if(size<20 || offset>bytes.size() || size>bytes.size()-offset || std::memcmp(bytes.data()+offset,"CFNT",4))return;
+        SetOverlayFont(std::vector<u8>(bytes.begin()+offset,bytes.begin()+offset+size));return;
+    }
+}
+
 void ResetToolRing() {
     std::lock_guard lock(mutex);
     state = State{};

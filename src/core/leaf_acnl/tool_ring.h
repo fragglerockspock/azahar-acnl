@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <memory>
 #include <string>
 #include <string_view>
 #include "common/common_types.h"
@@ -28,6 +29,9 @@ inline bool IsToolIconArchivePath(std::string_view path) {
     constexpr std::string_view suffix="Layout/ItemWin/item_icon.arc";
     return path.size()>=suffix.size() && path.substr(path.size()-suffix.size())==suffix;
 }
+bool IsOverlayFontPath(std::string_view path);
+void SetOverlayFont(const std::vector<u8>& bytes);
+std::shared_ptr<const std::vector<u8>> OverlayFontBytes();
 void SetToolIconArchive(const std::vector<u8>& bytes);
 std::vector<u8> ToolIcon(u16 icon);
 }

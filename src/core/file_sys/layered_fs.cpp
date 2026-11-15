@@ -85,10 +85,11 @@ void LayeredFS::Load() {
 
     if (acnl_ui_patch) {
         for (const auto& [path,file] : file_path_map) {
-            if ((!LeafACNL::IsToolIconArchivePath(path) && !LeafACNL::IsUiArchivePath(path)) || file->relocation.size>4*1024*1024) continue;
+            if ((!LeafACNL::IsToolIconArchivePath(path) && !LeafACNL::IsUiArchivePath(path) && !LeafACNL::IsOverlayFontPath(path)) || file->relocation.size>8*1024*1024) continue;
             std::vector<u8> bytes(file->relocation.size);
             if (romfs->ReadFile(file->relocation.original_offset,bytes.size(),bytes.data())==bytes.size()) {
                 if (LeafACNL::IsToolIconArchivePath(path)) LeafACNL::SetToolIconArchive(bytes);
+                else if(LeafACNL::IsOverlayFontPath(path)) LeafACNL::SetOverlayFont(bytes);
                 else LeafACNL::RegisterUiArchive(path,bytes);
             }
         }

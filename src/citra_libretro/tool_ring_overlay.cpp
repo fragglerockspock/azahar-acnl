@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <cstdlib>
+#include "citra_libretro/rounded_overlay_font.h"
 #include <unordered_map>
 #include <vector>
 #include <utility>
@@ -16,6 +18,25 @@
 #include "video_core/texture/texture_decode.h"
 
 namespace LibRetro {
+const OverlayFont& OverlayUiFont() {
+    static auto fallback=RoundedOverlayFont();
+    static std::shared_ptr<const std::vector<u8>> loaded;
+    static OverlayFont game;
+    const auto bytes=LeafACNL::OverlayFontBytes();
+    if(bytes!=loaded) {
+        loaded=bytes;
+        game=bytes ? ReadGameFont(*bytes,[](const u8* data,u32 format,u32 width,u32 height,u32 x,u32 y) {
+            Pica::Texture::TextureInfo info{};
+            info.width=width;info.height=height;
+            info.format=static_cast<Pica::TexturingRegs::TextureFormat>(format);info.SetDefaultStride();
+            const auto color=Pica::Texture::LookupTexture(data,x,y,info);
+            return format==7 || format==10 ? color.r() : color.a();
+        }) : OverlayFont{};
+    }
+    static bool announced=false;
+    if(!announced){LOG_INFO(Frontend,"Leaf overlay typography Garden/Nunito active");announced=true;}
+    return game.Valid() ? game : fallback;
+}
 ToolRingImage BuildToolRingImage(int width,int height) {
     const auto visual=ToolRingPresentation();
     const bool prompt=visual.opacity<=0 && LeafACNL::UiDialoguePrompt();
@@ -110,73 +131,92 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         }
     }
     {
-        constexpr std::array<std::array<u8,5>,26> glyphs{{
-            {{0x7e,0x11,0x11,0x11,0x7e}},{{0x7f,0x49,0x49,0x49,0x36}},{{0x3e,0x41,0x41,0x41,0x22}},
-            {{0x7f,0x41,0x41,0x22,0x1c}},{{0x7f,0x49,0x49,0x49,0x41}},{{0x7f,0x09,0x09,0x09,0x01}},
-            {{0x3e,0x41,0x49,0x49,0x7a}},{{0x7f,0x08,0x08,0x08,0x7f}},{{0x41,0x41,0x7f,0x41,0x41}},
-            {{0x20,0x40,0x41,0x3f,0x01}},{{0x7f,0x08,0x14,0x22,0x41}},{{0x7f,0x40,0x40,0x40,0x40}},
-            {{0x7f,0x02,0x0c,0x02,0x7f}},{{0x7f,0x04,0x08,0x10,0x7f}},{{0x3e,0x41,0x41,0x41,0x3e}},
-            {{0x7f,0x09,0x09,0x09,0x06}},{{0x3e,0x41,0x51,0x21,0x5e}},{{0x7f,0x09,0x19,0x29,0x46}},
-            {{0x46,0x49,0x49,0x49,0x31}},{{0x01,0x01,0x7f,0x01,0x01}},{{0x3f,0x40,0x40,0x40,0x3f}},
-            {{0x1f,0x20,0x40,0x20,0x1f}},{{0x3f,0x40,0x38,0x40,0x3f}},{{0x63,0x14,0x08,0x14,0x63}},
-            {{0x07,0x08,0x70,0x08,0x07}},{{0x61,0x51,0x49,0x45,0x43}}
-        }};
-        constexpr std::array<std::array<u8,5>,10> digits{{
-            {{0x3e,0x51,0x49,0x45,0x3e}},{{0,0x42,0x7f,0x40,0}},
-            {{0x42,0x61,0x51,0x49,0x46}},{{0x21,0x41,0x45,0x4b,0x31}},
-            {{0x18,0x14,0x12,0x7f,0x10}},{{0x27,0x45,0x45,0x45,0x39}},
-            {{0x3c,0x4a,0x49,0x49,0x30}},{{1,0x71,9,5,3}},
-            {{0x36,0x49,0x49,0x49,0x36}},{{6,0x49,0x49,0x29,0x1e}}
-        }};
-        const auto text = [&](const std::string& message,int top,int scale,int center) {
-            const int left=center-static_cast<int>(message.size())*6*scale/2;
-            for(size_t i=0;i<message.size();++i) {
-                const auto c=message[i];
-                if ((c<'A'||c>'Z') && (c<'0'||c>'9')) continue;
-                const auto& glyph = c>='0' && c<='9' ? digits[c-'0'] : glyphs[c-'A'];
-                for(int x=0;x<5;++x)for(int y=0;y<7;++y)if(glyph[x]&(1<<y))
-                    for(int sx=0;sx<scale;++sx)for(int sy=0;sy<scale;++sy)
-                        pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,top+y*scale+sy,{255,255,255,255});
+        const auto& font=OverlayUiFont();
+        const std::array<u8,4> ink{103,76,49,255},cream{255,249,224,255};
+        const auto measure=[&](const std::string& value,float height) {
+            float result=0;
+            for(unsigned char c:value) if(c>=32 && c<=126) result+=font.glyphs[c-32].advance*height/font.height;
+            return result;
+        };
+        const auto text=[&](const std::string& value,float center,float top,float height,std::array<u8,4> color) {
+            const float scale=height/font.height;
+            float pen=center-measure(value,height)/2;
+            for(unsigned char c:value) {
+                if(c<32 || c>126)continue;
+                const auto& g=font.glyphs[c-32];
+                const float left=pen+g.left*scale;
+                const auto sample=[&](int x,int y)->float {
+                    return x>=0 && y>=0 && x<g.width && y<g.height ? g.alpha[y*g.width+x]/255.0f : 0;
+                };
+                for(int y=static_cast<int>(std::floor(top));y<top+g.height*scale;++y)
+                    for(int x=static_cast<int>(std::floor(left));x<left+g.width*scale;++x) {
+                        const float sx=(x+.5f-left)/scale-.5f,sy=(y+.5f-top)/scale-.5f;
+                        const int ix=static_cast<int>(std::floor(sx)),iy=static_cast<int>(std::floor(sy));
+                        const float fx=sx-ix,fy=sy-iy;
+                        const float alpha=sample(ix,iy)*(1-fx)*(1-fy)+sample(ix+1,iy)*fx*(1-fy)+
+                            sample(ix,iy+1)*(1-fx)*fy+sample(ix+1,iy+1)*fx*fy;
+                        auto shaded=color;shaded[3]=static_cast<u8>(std::lround(color[3]*alpha));pixel(x,y,shaded);
+                    }
+                pen+=g.advance*scale;
             }
         };
-        if (visual.opacity>0 && tools.empty()) {
-            const auto message=LeafACNL::ToolRingStatus();
-            const int scale=std::max(1,std::min(2*unit,(w-24*unit)/std::max(1,static_cast<int>(message.size())*6)));
-            text(message,h/2,scale,w/2);
-        }
-        if (visual.opacity>0 && !tools.empty() && visual.selected>=0 && static_cast<size_t>(visual.selected)<tools.size()) {
-            const auto& tool=tools[visual.selected];
-            const auto name=ToolRingName(tool);
-            const int scale=std::max(1,static_cast<int>(std::lround(h/360.0)));
-            const int name_scale=std::max(1,static_cast<int>(std::lround(h*.005)));
-            const std::string action=tool.slot<0 ? "A PUT AWAY" : "A EQUIP";
-            const int half=std::min(w/2-8,std::max(static_cast<int>(name.size())*3*name_scale,static_cast<int>(action.size())*3*scale)+12*scale);
-            const int top=static_cast<int>(h*.12),bottom=top+35*scale;
-            const int corner=6*scale;
-            for(int y=top;y<bottom;++y) {
-                const int dy=std::max(top+corner-y,y-(bottom-corner-1));
-                const int inset=dy>0 ? corner-static_cast<int>(std::sqrt(std::max(0,corner*corner-dy*dy))) : 0;
-                for(int x=w/2-half+inset;x<w/2+half-inset;++x) pixel(x,y,{44,178,158,245});
+        const auto rounded=[&](float left,float top,float right,float bottom,float radius,std::array<u8,4> color) {
+            for(int y=static_cast<int>(std::floor(top));y<bottom;++y)for(int x=static_cast<int>(std::floor(left));x<right;++x) {
+                const float dx=std::max({left+radius-x-.5f,x+.5f-(right-radius),0.0f});
+                const float dy=std::max({top+radius-y-.5f,y+.5f-(bottom-radius),0.0f});
+                const float coverage=std::clamp(radius+.5f-std::hypot(dx,dy),0.0f,1.0f);
+                auto edge=color;edge[3]=static_cast<u8>(std::lround(color[3]*coverage));pixel(x,y,edge);
             }
-            for(int y=0;y<5*scale;++y)for(int x=w/2-(5*scale-y);x<w/2+(5*scale-y);++x)
-                pixel(x,bottom+y,{44,178,158,245});
-            text(name,top+4*scale,name_scale,w/2);
-            text(action,top+21*scale,scale,w/2);
-            text("B CANCEL",static_cast<int>(h*.88),scale,w/2);
+        };
+        const auto panel=[&](float left,float top,float right,float bottom,float radius) {
+            rounded(left+unit,top+2*unit,right+unit,bottom+2*unit,radius,{56,38,20,90});
+            rounded(left,top,right,bottom,radius,{184,151,99,255});
+            rounded(left+unit,top+unit,right-unit,bottom-unit,std::max(1.0f,radius-unit),cream);
+        };
+        const auto badge=[&](char letter,float cx,float cy,float diameter) {
+            circle(cx,cy,diameter/2,{90,155,117,255});
+            circle(cx,cy,diameter/2-unit,{234,248,212,255});
+            text(std::string(1,letter),cx,cy-diameter*.45f,diameter*.9f,ink);
+        };
+        const auto hint=[&](char button,const std::string& label,float center,float top,float height,bool boxed) {
+            const float pad=std::max(3.0f,h*.009f),diameter=height*1.1f;
+            const float width=diameter+pad+measure(label,height);
+            const float left=center-width/2;
+            if(boxed)panel(left-pad,top-pad,left+width+pad,top+diameter+pad,(diameter+2*pad)/2);
+            badge(button,left+diameter/2,top+diameter/2,diameter);
+            text(label,left+diameter+pad+measure(label,height)/2,top,height,ink);
+        };
+        if(visual.opacity>0 && tools.empty()) {
+            const auto message=LeafACNL::ToolRingStatus();
+            const float size=std::min(h*.035f,(w-24.0f)*font.height/std::max(1.0f,measure(message,static_cast<float>(font.height))));
+            text(message,w/2.0f,h/2.0f,size,cream);
+        }
+        if(visual.opacity>0 && !tools.empty() && visual.selected>=0 && static_cast<size_t>(visual.selected)<tools.size()) {
+            const auto& tool=tools[visual.selected];
+            auto name=ToolRingName(tool);
+            for(size_t i=1;i<name.size();++i)if(name[i]>='A' && name[i]<='Z')name[i]+=32;
+            const std::string action=tool.slot<0 ? "Put away" : "Equip";
+            const float size=h*.052f,hint_size=h*.035f,pad=h*.012f;
+            const float width=std::max(measure(name,size),hint_size*1.1f+pad+measure(action,hint_size))+2*pad;
+            const float left=w/2.0f-width/2,top=h*.09f,bottom=top+size+hint_size*1.1f+3*pad;
+            panel(left,top,left+width,bottom,5*unit);
+            for(int y=0;y<5*unit;++y)for(int x=w/2-(5*unit-y);x<w/2+(5*unit-y);++x)pixel(x,static_cast<int>(bottom)+y,cream);
+            text(name,w/2.0f,top+pad,size,ink);
+            hint('A',action,w/2.0f,top+size+2*pad,hint_size,false);
+            hint('B',"Cancel",w/2.0f,h*.88f,hint_size,true);
         }
         if(prompt) {
             layer_alpha=1;
-            const int scale=std::max(1,static_cast<int>(std::lround(h/280.0)));
-            const int right=w-12*scale,bottom=h-12*scale;
-            const int left=std::max(0,right-64*scale),top=std::max(0,bottom-17*scale);
-            for(int y=top;y<bottom;++y)for(int x=left;x<right;++x)
-                pixel(x,y,{20,38,28,220});
-            text("PRESS A",top+5*scale,scale,(left+right)/2);
+            const float size=h*.035f,pad=std::max(3.0f,h*.009f);
+            const float width=size*1.1f+pad+measure("Continue",size);
+            const float center=w-3*pad-width/2,top=h-4*pad-size*1.1f;
+            hint('A',"Continue",center,top,size,true);
         }
-        const auto status=LeafACNL::UiStatus();
-        const int diagnostic_scale=std::max(1,std::min(unit,(w-24*unit)/
-            std::max(1,static_cast<int>(status.size())*6)));
-        if(visual.opacity>0) text(status,8*unit,diagnostic_scale,w/2);
+        if(visual.opacity>0 && (tools.empty() || std::getenv("LEAF_UI_DEBUG"))) {
+            const auto status=LeafACNL::UiStatus();
+            const float size=std::min(h*.022f,(w-24.0f)*font.height/std::max(1.0f,measure(status,static_cast<float>(font.height))));
+            text(status,w/2.0f,2*unit,size,{255,255,255,255});
+        }
     }
     return {w,h,std::move(image)};
 }
