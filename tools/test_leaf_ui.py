@@ -368,7 +368,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2AB REG ")==0);
+    assert(UiStatus().find("UI FIX 2AC REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -572,6 +572,44 @@ int main(int argc,char** argv) {
         assert(wall_count==11);
         std::cout<<"Supplied eleven wallpaper texture keys passed\n";
     }
+    if(argc>6) {
+        ResetUi();
+        std::ifstream file(argv[6],std::ios::binary);
+        std::vector<u8> bytes{std::istreambuf_iterator<char>(file),{}};
+        RegisterUiArchive("Layout/msgWin/msg_win.arc",bytes);
+        size_t bodies=0,arrows=0;
+        for(const auto& entry:textures) {
+            bodies+=(entry.second&DialogueBody)!=0;
+            arrows+=(entry.second&DialogueAdvance)!=0;
+        }
+        assert(bodies>=1 && arrows==1);
+        std::cout<<"Supplied dialogue body and advance-arrow keys passed\n";
+    }
+    ResetUi();
+    const auto body=Register("Layout/msgWin/msg_win.arc","my_msg_win_02.bclim",91);
+    const auto arrow=Register("Layout/msgWin/msg_win.arc","my_cmn_allo_32.bclim",92);
+    assert(body==8192 && arrow==16384);
+    assert(!UiDialoguePrompt());
+    UiTarget(0x10000,256,416,0,240,400);
+    UiDraw(0x10000,body);
+    u32 prompt_end=0,prompt_value=0,prompt_control=0;
+    UiAfterDisplayTransfer(0x10000,0x90000,256,400,240,400,0,prompt_end,prompt_value,prompt_control);
+    assert(!UiDialoguePrompt());
+    UiDraw(0x10000,body|arrow);
+    UiAfterDisplayTransfer(0x10000,0x90000,256,400,240,400,0,prompt_end,prompt_value,prompt_control);
+    assert(UiDialoguePrompt());
+    displayed.tags=Choice;assert(!UiDialoguePrompt());
+    displayed.tags=Inventory;assert(!UiDialoguePrompt());
+    displayed.tags=TitleMenu;assert(!UiDialoguePrompt());
+    displayed.tags=Tab|HudButton;assert(UiDialoguePrompt());
+    targets[0x10000].sealed=true;
+    UiDraw(0x10000,0);
+    UiAfterDisplayTransfer(0x10000,0x90000,256,400,240,400,0,prompt_end,prompt_value,prompt_control);
+    assert(!UiDialoguePrompt());
+    UiDraw(0x10000,arrow);
+    UiAfterDisplayTransfer(0x10000,0x90000,256,400,240,400,0,prompt_end,prompt_value,prompt_control);
+    assert(!UiDialoguePrompt());
+    ResetUi();assert(!UiDialoguePrompt());
     std::cout << "Leaf UI registry, scene routing, transfers, crops and software composition passed\n";
 }
 ''')
@@ -582,7 +620,7 @@ try:
     arguments = [str(temp/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
-            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc", "Menu/mvmnt_undscrn.arc"):
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc", "Menu/mvmnt_undscrn.arc", "msgWin/msg_win.arc"):
                 target = temp / Path(name).name
                 target.write_bytes(archive.read(name))
                 arguments.append(str(target))

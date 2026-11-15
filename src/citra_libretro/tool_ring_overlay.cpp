@@ -17,9 +17,12 @@
 
 namespace LibRetro {
 ToolRingImage BuildToolRingImage(int width,int height) {
-    if (!ToolRingVisible() || width <= 0 || height <= 0)
+    const auto visual=ToolRingPresentation();
+    const bool prompt=visual.opacity<=0 && LeafACNL::UiDialoguePrompt();
+    if ((visual.opacity<=0 && !prompt) || width <= 0 || height <= 0)
         return {};
-    const auto tools = LeafACNL::Tools();
+    const auto& tools = visual.tools;
+    float layer_alpha=visual.opacity;
     const int h = std::clamp(height,360,1440);
     const int w = static_cast<int>(std::clamp(static_cast<long long>(width)*h/height,1LL,7680LL));
     const int unit=std::max(1,static_cast<int>(std::lround(h/360.0)));
@@ -28,12 +31,13 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         image[i] = 12;
         image[i + 1] = 22;
         image[i + 2] = 18;
-        image[i + 3] = 110;
+        image[i + 3] = static_cast<u8>(std::lround(110*visual.opacity));
     }
     auto pixel = [&](int x, int y, std::array<u8, 4> color) {
         if (x < 0 || y < 0 || x >= w || y >= h)
             return;
         const size_t offset = (static_cast<size_t>(y) * w + x) * 4;
+        color[3]=static_cast<u8>(std::lround(color[3]*layer_alpha));
         const unsigned alpha = color[3], old_alpha = image[offset + 3];
         const unsigned combined = alpha + old_alpha * (255 - alpha) / 255;
         if (!combined)
@@ -56,16 +60,16 @@ ToolRingImage BuildToolRingImage(int width,int height) {
                 pixel(x,y,edge);
             }
     };
-    for (int i = 0; !tools.empty() && i < 8; ++i) {
+    for (int i = 0; visual.opacity>0 && !tools.empty() && i < 8; ++i) {
         const double angle = i * 3.141592653589793 / 4 - 3.141592653589793 / 2;
-        const double cx = w / 2.0 + std::cos(angle) * h * 0.22,
-                     cy = h * 0.56 + std::sin(angle) * h * 0.22;
-        const double radius = h * 0.062 * (i == ToolRingSelected() ? 1.2 : 1.0);
+        const double cx = w / 2.0 + std::cos(angle) * h * 0.22 * visual.scale,
+                     cy = h * 0.56 + std::sin(angle) * h * 0.22 * visual.scale;
+        const double radius = h * 0.062 * visual.scale * (1.0 + .2 * visual.emphasis[i]);
         circle(cx + radius * 0.05, cy + radius * 0.09, radius, {0, 0, 0, 100});
         circle(cx, cy, radius,
-               i == ToolRingSelected() ? std::array<u8, 4>{115, 205, 179, 255}
+               i == visual.selected ? std::array<u8, 4>{115, 205, 179, 255}
                                        : std::array<u8, 4>{245, 240, 213, 245});
-        if (i == ToolRingSelected())
+        if (i == visual.selected)
             circle(cx, cy, radius * 0.91, {245, 240, 213, 255});
         if (static_cast<size_t>(i) >= tools.size())
             continue;
@@ -124,8 +128,8 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             {{0x3c,0x4a,0x49,0x49,0x30}},{{1,0x71,9,5,3}},
             {{0x36,0x49,0x49,0x49,0x36}},{{6,0x49,0x49,0x29,0x1e}}
         }};
-        const auto text = [&](const std::string& message,int top,int scale) {
-            const int left=(w-static_cast<int>(message.size())*6*scale)/2;
+        const auto text = [&](const std::string& message,int top,int scale,int center) {
+            const int left=center-static_cast<int>(message.size())*6*scale/2;
             for(size_t i=0;i<message.size();++i) {
                 const auto c=message[i];
                 if ((c<'A'||c>'Z') && (c<'0'||c>'9')) continue;
@@ -135,15 +139,42 @@ ToolRingImage BuildToolRingImage(int width,int height) {
                         pixel(left+static_cast<int>(i)*6*scale+x*scale+sx,top+y*scale+sy,{255,255,255,255});
             }
         };
-        if (tools.empty()) {
+        if (visual.opacity>0 && tools.empty()) {
             const auto message=LeafACNL::ToolRingStatus();
             const int scale=std::max(1,std::min(2*unit,(w-24*unit)/std::max(1,static_cast<int>(message.size())*6)));
-            text(message,h/2,scale);
+            text(message,h/2,scale,w/2);
+        }
+        if (visual.opacity>0 && !tools.empty() && visual.selected>=0 && static_cast<size_t>(visual.selected)<tools.size()) {
+            const auto& tool=tools[visual.selected];
+            const auto name=ToolRingName(tool);
+            const int scale=std::max(1,static_cast<int>(std::lround(h/360.0)));
+            const int half=std::min(w/2-8,static_cast<int>(name.size())*3*scale+12*scale);
+            const int top=static_cast<int>(h*.15),bottom=top+30*scale;
+            const int corner=6*scale;
+            for(int y=top;y<bottom;++y) {
+                const int dy=std::max(top+corner-y,y-(bottom-corner-1));
+                const int inset=dy>0 ? corner-static_cast<int>(std::sqrt(std::max(0,corner*corner-dy*dy))) : 0;
+                for(int x=w/2-half+inset;x<w/2+half-inset;++x) pixel(x,y,{44,178,158,245});
+            }
+            for(int y=0;y<5*scale;++y)for(int x=w/2-(5*scale-y);x<w/2+(5*scale-y);++x)
+                pixel(x,bottom+y,{44,178,158,245});
+            text(name,top+4*scale,scale,w/2);
+            text(tool.slot<0 ? "A PUT AWAY" : "A EQUIP",top+17*scale,scale,w/2);
+            text("B CANCEL",static_cast<int>(h*.88),scale,w/2);
+        }
+        if(prompt) {
+            layer_alpha=1;
+            const int scale=std::max(1,static_cast<int>(std::lround(h/280.0)));
+            const int right=w-12*scale,bottom=h-12*scale;
+            const int left=std::max(0,right-64*scale),top=std::max(0,bottom-17*scale);
+            for(int y=top;y<bottom;++y)for(int x=left;x<right;++x)
+                pixel(x,y,{20,38,28,220});
+            text("PRESS A",top+5*scale,scale,(left+right)/2);
         }
         const auto status=LeafACNL::UiStatus();
         const int diagnostic_scale=std::max(1,std::min(unit,(w-24*unit)/
             std::max(1,static_cast<int>(status.size())*6)));
-        text(status,8*unit,diagnostic_scale);
+        if(visual.opacity>0) text(status,8*unit,diagnostic_scale,w/2);
     }
     return {w,h,std::move(image)};
 }

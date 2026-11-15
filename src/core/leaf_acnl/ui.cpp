@@ -13,7 +13,8 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048, Wallpaper = 4096;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048, Wallpaper = 4096, DialogueBody = 8192, DialogueAdvance = 16384;
+u32 dialogue_tags=0;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
 std::unordered_map<u64, u32> textures;
@@ -56,6 +57,8 @@ void Union(UiRect& a, UiRect b) {
 }
 u32 Tags(std::string_view name) {
     u32 tags = 0;
+    if (name.find("msgWin/msg_win.arc:my_msg_")==0) tags |= DialogueBody;
+    if (name=="msgWin/msg_win.arc:my_cmn_allo_32.bclim") tags |= DialogueAdvance;
     if (name.find("Menu/mvmnt_undscrn.arc:my_mvm_")==0) tags |= Wallpaper;
     if (name.find("Menu/menu_tab.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos &&
         name.find(":my_cmn_")==std::string_view::npos) tags |= Tab;
@@ -140,7 +143,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2AB REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AC REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -154,6 +157,7 @@ void ResetUi() {
     dimensions.clear();
     targets.clear();
     displayed = {};
+    dialogue_tags=0;
     target_info.clear();
     completed.clear();
     last_completed=observed_pending=observed_completed=last_display_copy={};
@@ -170,7 +174,7 @@ bool IsUiArchivePath(std::string_view path) {
     const auto pos = path.find("Layout/");
     if (pos == std::string_view::npos) return false;
     path.remove_prefix(pos+7);
-    return path == "Menu/mvmnt_undscrn.arc" || path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
+    return path == "msgWin/msg_win.arc" || path == "Menu/mvmnt_undscrn.arc" || path == "Menu/menu_tab.arc" || path == "ItemWin/item_scrn.arc" || path == "ItemWin/itm_slct_win.arc" || path == "selWin/slct_win.arc" ||
            path == "selWin/cmn_slct_win.arc" || path == "Title/opng_titl.arc" ||
            path == "common/cmn_btn.arc" || path == "common/cmn_dialog_A.arc" ||
            (path.find("Menu/map_") == 0 && path.size() > 4 && path.substr(path.size()-4) == ".arc");
@@ -372,6 +376,7 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
         auto& info=it->second;
         const bool top_view=(info.view_width==240 && info.view_height==400) ||
                             (info.view_width==400 && info.view_height==240);
+        if (top_view) dialogue_tags=targets[source].tags&(DialogueBody|DialogueAdvance);
         if (!alpha_ready || !top_view || !info.size || info.format!=pica_format[format] ||
             width!=info.width || !height || height>info.height || height<info.view_height) return false;
         const u64 span=u64{width}*height*pixel_bytes[format];
@@ -494,6 +499,13 @@ std::array<float,4> UiKeyPixel(float r,float g,float b,bool preserve_color) {
             std::clamp((b-(1-a))/divisor,0.0f,1.0f),a*t*t*(3-2*t)};
 }
 
+bool UiDialoguePrompt() {
+    std::lock_guard lock(ui_mutex);
+    const u32 menus=Choice|TitleMenu|Inventory|ItemPopup|Dialog|MapControl;
+    return dialogue_tags==(DialogueBody|DialogueAdvance) && !(displayed.tags&menus) &&
+        !((displayed.tags&Tab) && !(displayed.tags&HudButton)) &&
+        !((displayed.tags&Map) && !(displayed.tags&HudButton));
+}
 std::vector<UiRegion> UiRegions(float width, float height) {
     std::lock_guard lock(ui_mutex);
     if (width<=0 || height<=0) return {};

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "citra_libretro/tool_ring_presentation.h"
 #include <cstdint>
 #include <vector>
 #include "common/logging/backend.h"
@@ -29,6 +30,7 @@ void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t 
 /// @see retro_input_poll_t
 void PollInput();
 bool ToolRingVisible();
+ToolRingVisual ToolRingPresentation();
 int ToolRingSelected();
 struct ToolRingImage {int width=0,height=0;std::vector<u8> pixels;};
 struct ToolRingVertex {float x,y;u32 color;};

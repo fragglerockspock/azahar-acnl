@@ -1,4 +1,5 @@
 #include <array>
+#include <mutex>
 #include <chrono>
 #include <cmath>
 #include <string>
@@ -57,6 +58,10 @@ bool SetHWSharedContext() {
 
 namespace {
 bool tool_ring_open = false;
+std::mutex tool_visual_mutex;
+ToolRingAnimation tool_animation;
+ToolRingVisual tool_visual;
+std::chrono::steady_clock::time_point tool_animation_time{};
 bool tool_ring_capture = false;
 std::array<bool, 16> previous_tool_buttons{};
 std::array<bool,16> tool_release_block{};
@@ -118,10 +123,24 @@ void PollToolRing() {
         }
     }
     if (!tool_ring_open && !tool_last_message.empty()) {DisplayMessage(" ");tool_last_message.clear();}
+    {
+        std::lock_guard lock(tool_visual_mutex);
+        const float elapsed=tool_animation_time.time_since_epoch().count() ? std::chrono::duration<float>(now-tool_animation_time).count() : 0.0f;
+        tool_animation_time=now;
+        tool_animation.Update(tool_ring_open,tool_selected,elapsed);
+        auto visual=tool_animation.Visual();
+        visual.selected=tool_selected;
+        visual.tools=tool_ring_open ? tools : tool_visual.tools;
+        tool_visual=std::move(visual);
+    }
     previous_tool_buttons=buttons;
 }
 }
 bool ToolRingVisible() {return tool_ring_open;}
+ToolRingVisual ToolRingPresentation() {
+    std::lock_guard lock(tool_visual_mutex);
+    return tool_visual;
+}
 int ToolRingSelected() {return tool_selected;}
 
 void PollInput() {
