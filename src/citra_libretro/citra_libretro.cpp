@@ -431,7 +431,8 @@ static bool UpdateAcNlCameraAspect() {
     }
     for (u32 address : acnl_camera_addresses) {
         if (system.Memory().IsValidVirtualAddress(*process,address) &&
-            system.Memory().IsValidVirtualAddress(*process,address+3))
+            system.Memory().IsValidVirtualAddress(*process,address+3) &&
+            system.Memory().Read32(*process,address)!=aspect_bits)
             system.Memory().Write32(*process, address, aspect_bits);
     }
     return true;
