@@ -503,6 +503,7 @@ bool UiDialoguePrompt() {
     std::lock_guard lock(ui_mutex);
     const u32 menus=Choice|TitleMenu|Inventory|ItemPopup|Dialog|MapControl;
     return dialogue_tags==(DialogueBody|DialogueAdvance) && !(displayed.tags&menus) &&
+        !((displayed.tags&TitleBackdrop) && (displayed.tags&TitleArrow)) &&
         !((displayed.tags&Tab) && !(displayed.tags&HudButton)) &&
         !((displayed.tags&Map) && !(displayed.tags&HudButton));
 }

@@ -601,6 +601,7 @@ int main(int argc,char** argv) {
     displayed.tags=Choice;assert(!UiDialoguePrompt());
     displayed.tags=Inventory;assert(!UiDialoguePrompt());
     displayed.tags=TitleMenu;assert(!UiDialoguePrompt());
+    displayed.tags=TitleBackdrop|TitleArrow;assert(!UiDialoguePrompt());
     displayed.tags=Tab|HudButton;assert(UiDialoguePrompt());
     targets[0x10000].sealed=true;
     UiDraw(0x10000,0);
