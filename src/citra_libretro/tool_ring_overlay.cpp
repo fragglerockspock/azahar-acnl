@@ -207,7 +207,7 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         }
         if(prompt) {
             layer_alpha=1;
-            const float size=h*.035f,pad=std::max(3.0f,h*.009f);
+            const float size=h*.047f,pad=std::max(3.0f,h*.009f);
             const float width=size*1.1f+pad+measure("Continue",size);
             const float center=w-3*pad-width/2,top=h-4*pad-size*1.1f;
             hint('A',"Continue",center,top,size,true);

@@ -1,4 +1,5 @@
 #include "core/leaf_acnl/ui.h"
+#include "core/leaf_acnl/camera_aspect.h"
 #include "core/leaf_acnl/tool_ring.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
@@ -302,6 +303,7 @@ void retro_run() {
     }
 
     while (!emu_instance->emu_window->HasSubmittedFrame()) {
+        if (acnl_single_screen) UpdateAcNlCameraAspect();
         auto result = Core::System::GetInstance().RunLoop();
 
         if (result != Core::System::ResultStatus::Success) {
@@ -428,10 +430,10 @@ static bool UpdateAcNlCameraAspect() {
         return false;
     }
     for (u32 address : acnl_camera_addresses) {
-        system.Memory().Write32(*process, address, aspect_bits);
+        if (system.Memory().IsValidVirtualAddress(*process,address) &&
+            system.Memory().IsValidVirtualAddress(*process,address+3))
+            system.Memory().Write32(*process, address, aspect_bits);
     }
-    LOG_INFO(Frontend, "ACNL camera aspect updated to {} at {} locations",
-             aspect, acnl_camera_addresses.size());
     return true;
 }
 
@@ -458,35 +460,11 @@ static bool PatchAcNlCameraAspect() {
     memory.ReadBlock(*process, code.addr, code_bytes.data(), code_bytes.size());
     memory.ReadBlock(*process, rodata.addr, rodata_bytes.data(), rodata_bytes.size());
 
-    const std::array<u32, 4> signature{0x42480000, 0x44dac000, 0x41b00000, 0x3fd55555};
-    std::vector<u32> camera_addresses;
-
-    auto read_word = [](const std::vector<u8>& bytes, std::size_t offset) -> u32 {
-        return static_cast<u32>(bytes[offset]) |
-               (static_cast<u32>(bytes[offset + 1]) << 8) |
-               (static_cast<u32>(bytes[offset + 2]) << 16) |
-               (static_cast<u32>(bytes[offset + 3]) << 24);
-    };
-
-    const auto scan_segment = [&](const std::vector<u8>& bytes, u32 base) {
-        for (std::size_t offset = 0; offset + 16 <= bytes.size(); offset += 4) {
-            bool matches = true;
-            for (std::size_t index = 0; index < signature.size(); ++index) {
-                if (read_word(bytes, offset + index * 4) != signature[index]) {
-                    matches = false;
-                    break;
-                }
-            }
-            if (matches) {
-                camera_addresses.push_back(base + static_cast<u32>(offset) + 12);
-            }
-        }
-    };
-
-    scan_segment(code_bytes, code.addr);
-    scan_segment(rodata_bytes, rodata.addr);
-
-    acnl_camera_addresses = std::move(camera_addresses);
+    const auto& data = process->codeset->DataSegment();
+    acnl_camera_addresses = LeafACNL::CameraAspectTargets(
+        rodata_bytes,rodata.addr,code_bytes,data.addr,data.size);
+    const auto code_cameras=LeafACNL::CameraAspectTargets(code_bytes,code.addr,{},0,0);
+    acnl_camera_addresses.insert(acnl_camera_addresses.end(),code_cameras.begin(),code_cameras.end());
     LOG_INFO(Frontend, "ACNL widescreen: camera signature matches {}", acnl_camera_addresses.size());
     return UpdateAcNlCameraAspect();
 }

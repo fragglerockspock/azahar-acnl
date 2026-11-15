@@ -368,7 +368,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2AC REG ")==0);
+    assert(UiStatus().find("UI FIX 2AE REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -585,6 +585,34 @@ int main(int argc,char** argv) {
         assert(bodies>=1 && arrows==1);
         std::cout<<"Supplied dialogue body and advance-arrow keys passed\n";
     }
+    if(argc>7) {
+        ResetUi();
+        std::ifstream file(argv[7],std::ios::binary);
+        std::vector<u8> bytes{std::istreambuf_iterator<char>(file),{}};
+        RegisterUiArchive("Layout/Menu/map_downtown.arc",bytes);
+        size_t keys=0,borders=0;
+        for(const auto& entry:textures) {
+            keys+=(entry.second&Map)!=0;
+            borders+=(entry.second&HudMap)!=0;
+        }
+        assert(keys>=20 && borders>=1);
+        assert(Tags("Menu/map_downtown.arc:tc_dt_Museum.bclim")==Map);
+        assert(Tags("Menu/map_downtown.arc:im_cmn_arrow32_00.bclim")==0);
+        const auto downtown=Register("Layout/Menu/map_downtown.arc","tc_map_list_win_02.bclim",73);
+        const auto tabs=Register("Layout/Menu/menu_tab.arc","my_men_btn_00.bclim",74);
+        UiTarget(0x10000,256,416,0,240,320);
+        UiDraw(0x10000,downtown,{0,38,320,207});
+        UiDraw(0x10000,tabs);
+        UiPresent(0x10000);FinishUiFrame(0x10000);
+        const auto regions=UiRegions(522,240);
+        assert(regions.size()==4);
+        check_rect(regions.back().source,{0,37,320,208});
+        float tx=0,ty=0;
+        const auto d=regions.back().destination;
+        assert(UiTouch((d.left+d.right)/2,(d.top+d.bottom)/2,522,240,tx,ty));
+        assert(std::abs(tx-.5f)<.001f && std::abs(ty-122.5f/240)<.001f);
+        std::cout<<"Supplied Main Street map registry, HUD routing and touch passed\n";
+    }
     ResetUi();
     const auto body=Register("Layout/msgWin/msg_win.arc","my_msg_win_02.bclim",91);
     const auto arrow=Register("Layout/msgWin/msg_win.arc","my_cmn_allo_32.bclim",92);
@@ -621,7 +649,7 @@ try:
     arguments = [str(temp/"test")]
     if os.environ.get("LEAF_LAYOUT_ZIP"):
         with ZipFile(os.environ["LEAF_LAYOUT_ZIP"]) as archive:
-            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc", "Menu/mvmnt_undscrn.arc", "msgWin/msg_win.arc"):
+            for name in ("Menu/menu_tab.arc", "selWin/cmn_slct_win.arc", "ItemWin/itm_slct_win.arc", "common/cmn_dialog_A.arc", "Menu/mvmnt_undscrn.arc", "msgWin/msg_win.arc", "Menu/map_downtown.arc"):
                 target = temp / Path(name).name
                 target.write_bytes(archive.read(name))
                 arguments.append(str(target))

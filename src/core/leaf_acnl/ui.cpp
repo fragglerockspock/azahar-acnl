@@ -67,7 +67,7 @@ u32 Tags(std::string_view name) {
     if (name=="common/cmn_dialog_A.arc:my_cmn_ballon_XXL.bclim") tags |= Dialog;
     if (name == "Menu/menu_tab.arc:my_men_btn_00.bclim") tags |= HudButton;
     for (const auto prefix : {"Menu/map_village.arc:", "Menu/map_island.arc:",
-                              "Menu/map_lobby.arc:", "Menu/map_exb.arc:"}) {
+                              "Menu/map_lobby.arc:", "Menu/map_exb.arc:", "Menu/map_downtown.arc:"}) {
         if (name.find(prefix) == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Map;
     }
     if (name.find("selWin/slct_win.arc:") == 0 && name.find(":im_cmn_")==std::string_view::npos) tags |= Choice;
@@ -143,7 +143,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2AC REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AE REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
