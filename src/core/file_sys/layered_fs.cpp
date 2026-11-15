@@ -1,5 +1,6 @@
 #include "core/leaf_acnl/ui.h"
 #include "core/leaf_acnl/top_layout_scale.h"
+#include "core/leaf_acnl/layout_patch.h"
 // Copyright 2020-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the misc/licenses/gplv2.txt file included.
@@ -97,6 +98,16 @@ void LayeredFS::Load() {
                              static_cast<float>(Settings::acnl_camera_aspect_height.load());
         const float correction = (400.0f / 240.0f) / aspect;
         if (correction > 0.0f && correction < 2.0f) {
+            std::vector<u8> title_window_source;
+            for (const auto& [path,file] : file_path_map) {
+                if (path.find("Layout/selWin/cmn_slct_win.arc")==std::string::npos ||
+                    file->relocation.type!=0 || file->relocation.size>4*1024*1024) continue;
+                title_window_source.resize(file->relocation.size);
+                if (romfs->ReadFile(file->relocation.original_offset,title_window_source.size(),
+                                    title_window_source.data())!=title_window_source.size())
+                    title_window_source.clear();
+                break;
+            }
             std::size_t patched_panes = 0;
             for (auto& [path, file] : file_path_map) {
                 if (path.find("Layout/") == std::string::npos ||
@@ -112,11 +123,18 @@ void LayeredFS::Load() {
                 if (bytes.size() < 80 || std::memcmp(bytes.data(), "darc", 4) != 0) {
                     continue;
                 }
-                const auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction)+
-                                     LeafACNL::PatchLeafPaneMasks(path,bytes)+
-                                     LeafACNL::PatchLeafFade(path,bytes,correction);
+                auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction)+
+                               LeafACNL::PatchLeafPaneMasks(path,bytes)+
+                               LeafACNL::PatchLeafFade(path,bytes,correction);
+                if (path.find("Layout/Title/opng_titl.arc")!=std::string::npos &&
+                    LeafACNL::LayoutPatch::PatchTitlePressA(bytes,title_window_source)) {
+                    ++changes;
+                    LeafACNL::RegisterUiArchive(path,bytes);
+                    LOG_INFO(Service_FS,"Leaf native title window graft and animation wrapper active");
+                }
                 if (changes != 0) {
                     file->relocation.type = 2;
+                    file->relocation.size = bytes.size();
                     file->relocation.patched_file = std::move(bytes);
                     patched_panes += changes;
                 }

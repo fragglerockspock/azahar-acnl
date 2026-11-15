@@ -368,7 +368,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2AE REG ")==0);
+    assert(UiStatus().find("UI FIX 2AF REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});

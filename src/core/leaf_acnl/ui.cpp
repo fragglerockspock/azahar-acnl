@@ -143,7 +143,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2AE REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AF REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
