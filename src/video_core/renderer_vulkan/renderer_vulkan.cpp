@@ -1,3 +1,4 @@
+#include "core/leaf_acnl/ui.h"
 // Copyright 2023-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -22,6 +23,11 @@
 
 #include "video_core/host_shaders/vulkan_cursor_frag.h"
 #include "video_core/host_shaders/vulkan_cursor_vert.h"
+#ifdef HAVE_LIBRETRO
+#include "citra_libretro/environment.h"
+#include "video_core/host_shaders/vulkan_tool_ring_vert.h"
+#include "video_core/host_shaders/vulkan_tool_ring_frag.h"
+#endif
 
 #include <vk_mem_alloc.h>
 #if defined(__APPLE__) && !defined(HAVE_LIBRETRO)
@@ -129,6 +135,9 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
     CompileShaders();
     BuildLayouts();
     BuildPipelines();
+#ifdef HAVE_LIBRETRO
+    tool_ring_buffer=std::make_unique<StreamBuffer>(instance,scheduler,vk::BufferUsageFlagBits::eVertexBuffer,4*1024*1024);
+#endif
     if (secondary_window) {
         secondary_present_window_ptr = std::make_unique<PresentWindow>(
             *secondary_window, instance, scheduler, IsLowRefreshRate());
@@ -156,7 +165,14 @@ RendererVulkan::~RendererVulkan() {
         vmaDestroyImage(instance.GetAllocator(), info.texture.image, info.texture.allocation);
     }
 
+    LeafACNL::SetUiAlphaReady(false);
+    device.destroyPipeline(leaf_alpha_pipeline);
     device.destroyPipeline(cursor_pipeline);
+#ifdef HAVE_LIBRETRO
+    device.destroyPipeline(tool_ring_pipeline);
+    device.destroyShaderModule(tool_ring_vertex_shader);
+    device.destroyShaderModule(tool_ring_fragment_shader);
+#endif
     device.destroyShaderModule(cursor_vertex_shader);
     device.destroyShaderModule(cursor_fragment_shader);
 }
@@ -166,7 +182,19 @@ void RendererVulkan::PrepareRendertarget() {
     const auto& regs_lcd = pica.regs_lcd;
     for (u32 i = 0; i < 3; i++) {
         const u32 fb_id = i == 2 ? 1 : 0;
-        const auto& framebuffer = framebuffer_config[fb_id];
+        auto framebuffer = framebuffer_config[fb_id];
+        bool tiled=false;
+        if (i==2 && !render_window.GetFramebufferLayout().bottom_screen_enabled) {
+            const auto image=LeafACNL::UiDisplayedImage();
+            if(image.Valid()) {
+                framebuffer.address_left1=image.address+image.offset;framebuffer.address_left2=image.address+image.offset;
+                tiled=image.tiled;
+                framebuffer.address_right1=0;framebuffer.address_right2=0;framebuffer.active_fb=0;
+                framebuffer.width.Assign(image.width);framebuffer.height.Assign(image.height);
+                framebuffer.stride=image.stride;
+                framebuffer.color_format.Assign(static_cast<Pica::PixelFormat>(image.format));
+            }
+        }
         auto& texture = screen_infos[i].texture;
 
         const auto color_fill = fb_id == 0 ? regs_lcd.color_fill_top : regs_lcd.color_fill_bottom;
@@ -181,7 +209,7 @@ void RendererVulkan::PrepareRendertarget() {
             ConfigureFramebufferTexture(texture, framebuffer);
         }
 
-        LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1);
+        LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1,tiled);
     }
 }
 
@@ -262,7 +290,7 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
 }
 
 void RendererVulkan::LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuffer,
-                                        ScreenInfo& screen_info, bool right_eye) {
+                                        ScreenInfo& screen_info, bool right_eye,bool tiled) {
 
     if (framebuffer.address_right1 == 0 || framebuffer.address_right2 == 0) {
         right_eye = false;
@@ -284,7 +312,7 @@ void RendererVulkan::LoadFBToScreenInfo(const Pica::FramebufferConfig& framebuff
     ASSERT(pixel_stride % 4 == 0);
 
     if (!rasterizer.AccelerateDisplay(framebuffer, framebuffer_addr, static_cast<u32>(pixel_stride),
-                                      screen_info)) {
+                                      screen_info,tiled)) {
         // Reset the screen info's display texture to its own permanent texture
         screen_info.image_view = screen_info.texture.image_view;
         screen_info.texcoords = {0.f, 0.f, 1.f, 1.f};
@@ -306,6 +334,10 @@ void RendererVulkan::CompileShaders() {
     present_shaders[2] = Compile(HostShaders::VULKAN_PRESENT_INTERLACED_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
 
+#ifdef HAVE_LIBRETRO
+    tool_ring_vertex_shader=Compile(HostShaders::VULKAN_TOOL_RING_VERT,vk::ShaderStageFlagBits::eVertex,device);
+    tool_ring_fragment_shader=Compile(HostShaders::VULKAN_TOOL_RING_FRAG,vk::ShaderStageFlagBits::eFragment,device);
+#endif
     cursor_vertex_shader =
         Compile(HostShaders::VULKAN_CURSOR_VERT, vk::ShaderStageFlagBits::eVertex, device);
     cursor_fragment_shader =
@@ -483,6 +515,24 @@ void RendererVulkan::BuildPipelines() {
             instance.GetDevice().createGraphicsPipeline({}, pipeline_info);
         ASSERT_MSG(result == vk::Result::eSuccess, "Unable to build present pipelines");
         present_pipelines[i] = pipeline;
+        if (i==0) {
+            auto alpha_attachment=colorblend_attachment;
+            alpha_attachment.srcColorBlendFactor=vk::BlendFactor::eSrcAlpha;
+            alpha_attachment.dstColorBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            alpha_attachment.srcAlphaBlendFactor=vk::BlendFactor::eOne;
+            alpha_attachment.dstAlphaBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+            auto alpha_blending=color_blending;
+            alpha_blending.pAttachments=&alpha_attachment;
+            auto alpha_info=pipeline_info;
+            alpha_info.pColorBlendState=&alpha_blending;
+            try {
+                const auto [alpha_result,alpha_pipeline]=instance.GetDevice().createGraphicsPipeline({},alpha_info);
+                if (alpha_result==vk::Result::eSuccess) leaf_alpha_pipeline=alpha_pipeline;
+            } catch (const vk::SystemError& error) {
+                LOG_ERROR(Render_Vulkan,"Leaf alpha pipeline unavailable: {}",error.what());
+            }
+            LeafACNL::SetUiAlphaReady(static_cast<bool>(leaf_alpha_pipeline));
+        }
     }
 
     // Build cursor pipeline (simple position-only, inverted color blending)
@@ -603,6 +653,25 @@ void RendererVulkan::BuildPipelines() {
             instance.GetDevice().createGraphicsPipeline({}, cursor_pipeline_info);
         ASSERT_MSG(result == vk::Result::eSuccess, "Unable to build cursor pipeline");
         cursor_pipeline = pipeline;
+#ifdef HAVE_LIBRETRO
+        const vk::VertexInputBindingDescription ring_binding{0,sizeof(LibRetro::ToolRingVertex),vk::VertexInputRate::eVertex};
+        const std::array ring_attributes={vk::VertexInputAttributeDescription{0,0,vk::Format::eR32G32Sfloat,0},vk::VertexInputAttributeDescription{1,0,vk::Format::eR8G8B8A8Unorm,8}};
+        const vk::PipelineVertexInputStateCreateInfo ring_vertex_input{.vertexBindingDescriptionCount=1,.pVertexBindingDescriptions=&ring_binding,.vertexAttributeDescriptionCount=static_cast<u32>(ring_attributes.size()),.pVertexAttributeDescriptions=ring_attributes.data()};
+        auto ring_blend=cursor_blend_attachment;
+        ring_blend.srcColorBlendFactor=vk::BlendFactor::eSrcAlpha;
+        ring_blend.dstColorBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+        ring_blend.dstAlphaBlendFactor=vk::BlendFactor::eOneMinusSrcAlpha;
+        auto ring_color_blending=cursor_color_blending;
+        ring_color_blending.pAttachments=&ring_blend;
+        const std::array ring_shaders={vk::PipelineShaderStageCreateInfo{.stage=vk::ShaderStageFlagBits::eVertex,.module=tool_ring_vertex_shader,.pName="main"},vk::PipelineShaderStageCreateInfo{.stage=vk::ShaderStageFlagBits::eFragment,.module=tool_ring_fragment_shader,.pName="main"}};
+        auto ring_info=cursor_pipeline_info;
+        ring_info.pStages=ring_shaders.data();
+        ring_info.pVertexInputState=&ring_vertex_input;
+        ring_info.pColorBlendState=&ring_color_blending;
+        const auto [ring_result,ring_pipeline]=instance.GetDevice().createGraphicsPipeline({},ring_info);
+        ASSERT_MSG(ring_result==vk::Result::eSuccess,"Unable to build tool ring pipeline");
+        tool_ring_pipeline=ring_pipeline;
+#endif
     }
 }
 
@@ -1058,11 +1127,74 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
         }
     }
 
+#ifdef HAVE_LIBRETRO
+    DrawLeafUi(layout);
+    DrawToolRing(layout);
+#endif
     DrawCursor(layout);
 
     scheduler.Record([](vk::CommandBuffer cmdbuf) { cmdbuf.endRenderPass(); });
 }
 
+#ifdef HAVE_LIBRETRO
+void RendererVulkan::DrawLeafUi(const Layout::FramebufferLayout& layout) {
+    if (!layout.top_screen_enabled || layout.bottom_screen_enabled) return;
+    const auto regions = LeafACNL::UiRegions(static_cast<float>(layout.width),static_cast<float>(layout.height));
+    static bool announced = false;
+    if (!regions.empty() && !announced) { LOG_INFO(Render_Vulkan,"Leaf UI Vulkan composition active"); announced = true; }
+    for (const auto& region : regions) {
+        if (region.shade>0) {
+            const u32 rgba = static_cast<u32>(region.shade*255)<<24;
+            const std::array<LibRetro::ToolRingVertex,6> vertices{{
+                {-1,-1,rgba},{1,-1,rgba},{-1,1,rgba},
+                {-1,1,rgba},{1,-1,rgba},{1,1,rgba}}};
+            auto [data,offset,invalidate] = tool_ring_buffer->Map(sizeof(vertices),16);
+            std::memcpy(data,vertices.data(),sizeof(vertices));
+            tool_ring_buffer->Commit(sizeof(vertices));
+            scheduler.Record([this,offset,pipeline=tool_ring_pipeline](vk::CommandBuffer cmdbuf) {
+                cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline);
+                cmdbuf.bindVertexBuffers(0,tool_ring_buffer->Handle(),{offset});
+                cmdbuf.draw(6,1,0,0);
+            });
+        }
+        scheduler.Record([this,index=current_pipeline](vk::CommandBuffer cmdbuf) {
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,leaf_alpha_pipeline ? leaf_alpha_pipeline : present_pipelines[index]);
+        });
+        const int saved_right=draw_info.screen_id_r;
+        if (leaf_alpha_pipeline) draw_info.screen_id_r=region.preserve_color ? -2 : -1;
+        const auto original = screen_infos[2].texcoords;
+        auto& tex = screen_infos[2].texcoords;
+        const float tw = original.right-original.left;
+        const float th = original.bottom-original.top;
+        tex.left = original.left+tw*region.source.left/320;
+        tex.right = original.left+tw*region.source.right/320;
+        tex.top = original.bottom-th*region.source.bottom/240;
+        tex.bottom = original.bottom-th*region.source.top/240;
+        const auto& dst = region.destination;
+        DrawSingleScreen(2,dst.left,dst.top,dst.right-dst.left,dst.bottom-dst.top,
+                         Layout::DisplayOrientation::Landscape);
+        tex = original;
+        draw_info.screen_id_r=saved_right;
+    }
+}
+
+void RendererVulkan::DrawToolRing(const Layout::FramebufferLayout& layout) {
+    const auto vertices=LibRetro::BuildToolRingVertices(layout.width,layout.height);
+    if(vertices.empty())return;
+    const u32 size=static_cast<u32>(vertices.size()*sizeof(LibRetro::ToolRingVertex));
+    if(size>4*1024*1024)return;
+    auto [data,offset,invalidate]=tool_ring_buffer->Map(size,16);
+    std::memcpy(data,vertices.data(),size);
+    tool_ring_buffer->Commit(size);
+    static bool announced=false;
+    if(!announced){LOG_INFO(Render_Vulkan,"Leaf ToolRing Vulkan overlay active");announced=true;}
+    scheduler.Record([this,offset,count=static_cast<u32>(vertices.size()),pipeline=tool_ring_pipeline](vk::CommandBuffer cmdbuf){
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline);
+        cmdbuf.bindVertexBuffers(0,tool_ring_buffer->Handle(),{offset});
+        cmdbuf.draw(count,1,0,0);
+    });
+}
+#endif
 void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
     const auto cursor = render_window.GetCursorInfo();
     if (!cursor.visible) {
@@ -1144,6 +1276,9 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
+    const auto& leaf_bottom = pica.regs.framebuffer_config[1];
+    LeafACNL::FinishUiFrame(leaf_bottom.active_fb == 0 ? leaf_bottom.address_left1 : leaf_bottom.address_left2,
+        pica.regs_lcd.color_fill_bottom.is_enabled);
     PrepareRendertarget();
     RenderScreenshot();
     isSecondaryWindow = false;

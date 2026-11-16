@@ -177,6 +177,11 @@ void RasterizerVulkan::LoadDefaultDiskResources(
 }
 
 void RasterizerVulkan::SyncDrawState() {
+    const float scale = 1.0f;
+    if (vs_data.widescreen_scale != scale) {
+        vs_data.widescreen_scale = scale;
+        vs_data_dirty = true;
+    }
     SyncDrawUniforms();
 
     // SyncCullMode();
@@ -849,7 +854,7 @@ bool RasterizerVulkan::AccelerateFill(const Pica::MemoryFillConfig& config) {
 
 bool RasterizerVulkan::AccelerateDisplay(const Pica::FramebufferConfig& config,
                                          PAddr framebuffer_addr, u32 pixel_stride,
-                                         ScreenInfo& screen_info) {
+                                         ScreenInfo& screen_info,bool tiled) {
     if (framebuffer_addr == 0) [[unlikely]] {
         return false;
     }
@@ -859,7 +864,7 @@ bool RasterizerVulkan::AccelerateDisplay(const Pica::FramebufferConfig& config,
     src_params.width = std::min(config.width.Value(), pixel_stride);
     src_params.height = config.height;
     src_params.stride = pixel_stride;
-    src_params.is_tiled = false;
+    src_params.is_tiled = tiled;
     src_params.pixel_format = VideoCore::PixelFormatFromGPUPixelFormat(config.color_format);
     src_params.UpdateParams();
 

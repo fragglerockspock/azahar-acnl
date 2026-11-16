@@ -45,7 +45,8 @@ static_assert(sizeof(RomFSHeader) == 0x28, "Size of RomFSHeader is not correct")
 class LayeredFS : public RomFSReader {
 public:
     explicit LayeredFS(std::shared_ptr<RomFSReader> romfs, std::string patch_path,
-                       std::string patch_ext_path, bool load_relocations = true);
+                       std::string patch_ext_path, bool load_relocations = true,
+                       bool acnl_ui_patch = false);
     ~LayeredFS() override;
 
     std::size_t GetSize() const override;
@@ -62,6 +63,7 @@ public:
     }
 
 private:
+    bool acnl_ui_patch = false;
     struct File;
     struct Directory {
         std::string name;

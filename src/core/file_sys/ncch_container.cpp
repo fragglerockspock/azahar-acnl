@@ -662,11 +662,19 @@ Loader::ResultStatus NCCHContainer::ReadRomFS(std::shared_ptr<RomFSReader>& romf
     const auto path =
         fmt::format("{}mods/{:016X}/", FileUtil::GetUserPath(FileUtil::UserPath::LoadDir),
                     GetModId(ncch_header.program_id));
+    const u64 acnl_id = GetModId(ncch_header.program_id);
+    const bool acnl_ui_patch = acnl_id == 0x0004000000086200ULL ||
+                               acnl_id == 0x0004000000086300ULL ||
+                               acnl_id == 0x0004000000086400ULL ||
+                               acnl_id == 0x0004000000198D00ULL ||
+                               acnl_id == 0x0004000000198E00ULL ||
+                               acnl_id == 0x0004000000198F00ULL;
     if (!is_proto && use_layered_fs &&
-        (FileUtil::Exists(path + "romfs/") || FileUtil::Exists(path + "romfs_ext/"))) {
+        (acnl_ui_patch || FileUtil::Exists(path + "romfs/") ||
+         FileUtil::Exists(path + "romfs_ext/"))) {
 
         romfs_file = std::make_shared<LayeredFS>(std::move(direct_romfs), path + "romfs/",
-                                                 path + "romfs_ext/");
+                                                 path + "romfs_ext/", true, acnl_ui_patch);
     } else {
         romfs_file = std::move(direct_romfs);
     }

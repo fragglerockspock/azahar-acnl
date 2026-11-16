@@ -198,6 +198,7 @@ public:
      * @returns True if the coordinates are within the touchpad, otherwise false
      */
     bool TouchPressed(unsigned framebuffer_x, unsigned framebuffer_y);
+    void TouchNormalized(float x, float y);
 
     /// Signal that a touch released event has occurred (e.g. mouse click released)
     void TouchReleased();

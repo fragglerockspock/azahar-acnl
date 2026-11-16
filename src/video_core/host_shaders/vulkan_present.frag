@@ -35,6 +35,27 @@ vec4 GetScreen(int screen_id) {
 #endif
 }
 
+vec4 LeafKeyTexel(vec3 c) {
+    float spill=clamp(min(c.r,c.b)-c.g,0.0,1.0);
+    if(screen_id_r==-2)spill*=1.0-smoothstep(0.03,0.08,abs(c.r-c.b));
+    float a=1.0-spill;
+    vec3 col=clamp((c-(1.0-a)*vec3(1,0,1))/max(a,0.001),0.0,1.0);
+    a*=smoothstep(0.06,0.14,a);
+    return vec4(col*a,a);
+}
+vec4 LeafKeySample() {
+    ivec2 size=textureSize(screen_textures[2],0);
+    ivec2 hi=size-ivec2(1);
+    vec2 p=frag_tex_coord*vec2(size)-0.5;
+    ivec2 i=ivec2(floor(p));
+    vec2 f=fract(p);
+    vec4 a=LeafKeyTexel(texelFetch(screen_textures[2],clamp(i,ivec2(0),hi),0).rgb);
+    vec4 b=LeafKeyTexel(texelFetch(screen_textures[2],clamp(i+ivec2(1,0),ivec2(0),hi),0).rgb);
+    vec4 c=LeafKeyTexel(texelFetch(screen_textures[2],clamp(i+ivec2(0,1),ivec2(0),hi),0).rgb);
+    vec4 d=LeafKeyTexel(texelFetch(screen_textures[2],clamp(i+ivec2(1,1),ivec2(0),hi),0).rgb);
+    vec4 mixed=mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+    return vec4(mixed.a>0.0001 ? mixed.rgb/mixed.a : vec3(0),mixed.a);
+}
 void main() {
-    color = GetScreen(screen_id_l);
+    color=(screen_id_r==-1 || screen_id_r==-2) && screen_id_l==2 ? LeafKeySample() : GetScreen(screen_id_l);
 }

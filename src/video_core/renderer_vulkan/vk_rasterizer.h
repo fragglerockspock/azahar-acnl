@@ -58,7 +58,7 @@ public:
     bool AccelerateTextureCopy(const Pica::DisplayTransferConfig& config) override;
     bool AccelerateFill(const Pica::MemoryFillConfig& config) override;
     bool AccelerateDisplay(const Pica::FramebufferConfig& config, PAddr framebuffer_addr,
-                           u32 pixel_stride, ScreenInfo& screen_info);
+                           u32 pixel_stride, ScreenInfo& screen_info, bool tiled = false);
     bool AccelerateDrawBatch(bool is_indexed) override;
 
     /// Switches the disk resources to the specified title

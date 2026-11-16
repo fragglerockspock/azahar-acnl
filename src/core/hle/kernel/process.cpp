@@ -28,6 +28,7 @@
 #include "core/hle/service/plgldr/plgldr.h"
 #include "core/loader/loader.h"
 #include "core/memory.h"
+#include "core/leaf_acnl/tool_ring.h"
 
 SERIALIZE_EXPORT_IMPL(Kernel::AddressMapping)
 SERIALIZE_EXPORT_IMPL(Kernel::Process)
@@ -258,6 +259,8 @@ void Process::Run(s32 main_thread_priority, u32 stack_size) {
     if (plgldr) {
         plgldr->OnProcessRun(*this, kernel);
     }
+
+    LeafACNL::Locate(Core::System::GetInstance(), *this);
 
     status = ProcessStatus::Running;
 
