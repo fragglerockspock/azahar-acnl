@@ -39,7 +39,8 @@ const OverlayFont& OverlayUiFont() {
 }
 ToolRingImage BuildToolRingImage(int width,int height) {
     const auto visual=ToolRingPresentation();
-    const bool prompt=visual.opacity<=0 && LeafACNL::UiDialoguePrompt();
+    const auto cue=DialoguePromptPresentation();
+    const bool prompt=visual.opacity<=0 && cue.opacity>0;
     if ((visual.opacity<=0 && !prompt) || width <= 0 || height <= 0)
         return {};
     const auto& tools = visual.tools;
@@ -206,11 +207,11 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             hint('B',"Cancel",w/2.0f,h*.88f,hint_size,true);
         }
         if(prompt) {
-            layer_alpha=1;
-            const float size=h*.047f,pad=std::max(3.0f,h*.009f);
-            const float width=size*1.1f+pad+measure("Continue",size);
-            const float center=w-3*pad-width/2,top=h-4*pad-size*1.1f;
-            hint('A',"Continue",center,top,size,true);
+            layer_alpha=cue.opacity;
+            const float diameter=h*.068f*cue.scale,pad=h*.025f;
+            const float cx=w-pad-h*.034f,cy=h-pad-h*.034f;
+            circle(cx+unit,cy+2*unit,diameter/2,{56,38,20,80});
+            badge('A',cx,cy,diameter);
         }
         if(visual.opacity>0 && (tools.empty() || std::getenv("LEAF_UI_DEBUG"))) {
             const auto status=LeafACNL::UiStatus();

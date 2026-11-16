@@ -28,6 +28,32 @@ inline std::string ToolRingName(const LeafACNL::Tool& tool) {
     return tool.kind==21 ? "MEGAPHONE" : "TOOL";
 }
 
+struct DialogueCueVisual {
+    float opacity=0;
+    float scale=.82f;
+};
+class DialogueCueAnimation {
+public:
+    void Update(bool visible,bool pressed,float seconds) {
+        if(!std::isfinite(seconds))return;
+        seconds=std::clamp(seconds,0.0f,1.0f);
+        progress=std::clamp(progress+(visible ? seconds/.20f : -seconds/.18f),0.0f,1.0f);
+        phase=std::fmod(phase+seconds,3.2f);
+        if(pressed && progress>0)press_age=0;
+        else press_age=std::min(.26f,press_age+seconds);
+        if(progress==0){phase=0;press_age=.26f;}
+    }
+    DialogueCueVisual Visual() const {
+        const auto ease=[](float t){return t*t*(3-2*t);};
+        const float opacity=ease(progress);
+        const float pulse=.985f+.015f*std::cos(phase*6.28318530718f/3.2f);
+        const float press=press_age<.07f ? ease(press_age/.07f) : 1-ease((press_age-.07f)/.19f);
+        return {opacity,(.82f+.18f*opacity)*pulse*(1-.14f*press)};
+    }
+private:
+    float progress=0,phase=0,press_age=.26f;
+};
+
 class ToolRingAnimation {
 public:
     void Update(bool open, int selected, float seconds) {

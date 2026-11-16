@@ -13,7 +13,7 @@
 
 namespace LeafACNL {
 namespace {
-constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048, Wallpaper = 4096, DialogueBody = 8192, DialogueAdvance = 16384;
+constexpr u32 Tab = 1, HudButton = 2, Map = 4, Choice = 8, MapControl = 16, HudMap = 32, TitleMenu = 64, TitleBackdrop = 128, TitleArrow = 256, Inventory = 512, ItemPopup = 1024, Dialog = 2048, Wallpaper = 4096, DialogueBody = 8192, DialogueAdvance = 16384, TitleLogo = 32768, TitlePress = 65536;
 u32 dialogue_tags=0;
 std::atomic_bool enabled{false};
 std::mutex ui_mutex;
@@ -57,6 +57,11 @@ void Union(UiRect& a, UiRect b) {
 }
 u32 Tags(std::string_view name) {
     u32 tags = 0;
+    if(name.find("Title/opng_titl.arc:")==0) {
+        if(name.find(":my_op_base_")!=std::string_view::npos || name.find(":my_logo_s_")!=std::string_view::npos ||
+           name.find(":my_ot_")!=std::string_view::npos || name.find(":my_op_leaf_")!=std::string_view::npos)tags|=TitleLogo;
+        if(name=="Title/opng_titl.arc:ny_pct_leaf.bclim")tags|=TitlePress;
+    }
     if (name.find("msgWin/msg_win.arc:my_msg_")==0) tags |= DialogueBody;
     if (name=="msgWin/msg_win.arc:my_cmn_allo_32.bclim") tags |= DialogueAdvance;
     if (name.find("Menu/mvmnt_undscrn.arc:my_mvm_")==0) tags |= Wallpaper;
@@ -143,7 +148,7 @@ size_t UiTextureSize(u32 format, u32 width, u32 height) {
 }
 std::string UiStatus() {
     std::lock_guard lock(ui_mutex);
-    return "UI FIX 2AF REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
+    return "UI FIX 2AG REG "+std::to_string(textures.size())+" D "+std::to_string(draw_count)+
            " H "+std::to_string(match_count)+" T "+std::to_string(transfer_count)+
            " TAG "+std::to_string(displayed.tags)+" K "+std::to_string(key_count)+" P "+std::to_string(partial_key_count)+
            " IMG "+(displayed.image.Valid() ? "ON" : "OFF")+" R "+std::to_string(image_route)+" A "+(alpha_ready.load() ? "ON" : "OFF")+
@@ -382,7 +387,7 @@ bool UiAfterDisplayTransfer(u32 source,u32 destination,u32 width,u32 height,
         const u64 span=u64{width}*height*pixel_bytes[format];
         if (span>info.size || span>UINT32_MAX-source || span%8 ||
             (u64{destination}<u64{source}+span && u64{destination}+u64{width}*height*4>source)) return false;
-        const u32 backdrop=targets[source].tags&TitleBackdrop;
+        const u32 backdrop=targets[source].tags&(TitleBackdrop|TitleLogo);
         clear_phase={true,source,source+static_cast<u32>(span),format,backdrop};
         end=clear_phase.end;
     }
@@ -523,6 +528,8 @@ std::vector<UiRegion> UiRegions(float width, float height) {
         sample.top=1;
         return {Slice(region,sample)};
     }
+    if ((tags&TitleLogo) && (tags&TitlePress) && (tags&TitleMenu) && !(tags&TitleArrow))
+        return {Region({60,72,260,168},width,height,1,1,1,1,.6f,-10,-10)};
     if ((tags&TitleMenu) || ((tags&TitleBackdrop) && (tags&TitleArrow)))
         return {Region({20,20,300,220},width,height,.5f,.55f,.5f,.5f,.85f)};
     if ((tags&Map) && (tags&MapControl))

@@ -31,6 +31,7 @@ void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t 
 void PollInput();
 bool ToolRingVisible();
 ToolRingVisual ToolRingPresentation();
+DialogueCueVisual DialoguePromptPresentation();
 int ToolRingSelected();
 struct ToolRingImage {int width=0,height=0;std::vector<u8> pixels;};
 struct ToolRingVertex {float x,y;u32 color;};

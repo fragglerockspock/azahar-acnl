@@ -4,6 +4,7 @@
 #include <cmath>
 #include <string>
 #include "core/leaf_acnl/tool_ring.h"
+#include "core/leaf_acnl/ui.h"
 // Copyright 2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
@@ -61,6 +62,8 @@ bool tool_ring_open = false;
 std::mutex tool_visual_mutex;
 ToolRingAnimation tool_animation;
 ToolRingVisual tool_visual;
+DialogueCueAnimation dialogue_animation;
+DialogueCueVisual dialogue_visual;
 std::chrono::steady_clock::time_point tool_animation_time{};
 bool tool_ring_capture = false;
 std::array<bool, 16> previous_tool_buttons{};
@@ -123,10 +126,14 @@ void PollToolRing() {
         }
     }
     if (!tool_ring_open && !tool_last_message.empty()) {DisplayMessage(" ");tool_last_message.clear();}
+    const bool dialogue_ready=LeafACNL::UiDialoguePrompt() && !tool_ring_open;
+    const bool dialogue_pressed=edge(RETRO_DEVICE_ID_JOYPAD_A) && !tool_ring_capture && !tool_ring_open;
     {
         std::lock_guard lock(tool_visual_mutex);
         const float elapsed=tool_animation_time.time_since_epoch().count() ? std::chrono::duration<float>(now-tool_animation_time).count() : 0.0f;
         tool_animation_time=now;
+        dialogue_animation.Update(dialogue_ready,dialogue_pressed,elapsed);
+        dialogue_visual=dialogue_animation.Visual();
         tool_animation.Update(tool_ring_open,tool_selected,elapsed);
         auto visual=tool_animation.Visual();
         visual.selected=tool_selected;
@@ -140,6 +147,10 @@ bool ToolRingVisible() {return tool_ring_open;}
 ToolRingVisual ToolRingPresentation() {
     std::lock_guard lock(tool_visual_mutex);
     return tool_visual;
+}
+DialogueCueVisual DialoguePromptPresentation() {
+    std::lock_guard lock(tool_visual_mutex);
+    return dialogue_visual;
 }
 int ToolRingSelected() {return tool_selected;}
 
