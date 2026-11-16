@@ -49,7 +49,21 @@ int main(int argc,char** argv) {
     Layout layout;assert(ReadLayout(Find(result,"blyt/opng_titl_00.bclyt")->bytes,"CLYT",layout));
     const int parent=Pane(layout,"N_leaf_press"),graft=Pane(layout,"W_leaf_press"),caption=Pane(layout,"T_tex_00");
     assert(parent>=0 && graft==parent+2 && caption==graft+1);
+    const int probe=Pane(layout,"P_leaf_title_tag");assert(probe>=0 && probe<parent);
     assert(Type(layout.sections[parent+1],"pas1") && Type(layout.sections[caption+1],"pae1"));
+    const auto* tag=Find(result,"timg/leaf_title_tag.bclim");assert(tag && tag->bytes==TitleProbeTexture());
+    const auto& marker=tag->bytes;assert(marker.size()==296 && Half(marker,284)==8 && Half(marker,286)==8 && Word(marker,288)==9);
+    for(size_t i=0;i<256;i+=4)assert(marker[i]==0);
+    std::vector<std::string> textures;std::vector<Bytes> mats;
+    assert(TextureNames(layout.sections[Section(layout,"txl1")],textures));
+    assert(Materials(layout.sections[Section(layout,"mat1")],mats));
+    const auto& marker_pane=layout.sections[probe];const size_t marker_material=Half(marker_pane,92);
+    assert(marker_material<mats.size() && textures.at(Half(mats[marker_material],52))=="leaf_title_tag.bclim");
+    for(size_t p=76;p<92;++p)assert(marker_pane[p]==255);
+    assert(marker_pane[94]==1 && Float(marker_pane,68)==1 && Float(marker_pane,72)==1);
+    std::vector<ArcEntry> native_files;auto native_archive=original;
+    assert(PatchTitlePressA(native_archive,source,false)==1 && ReadArc(native_archive,native_files));
+    assert(!Find(native_files,"timg/leaf_title_tag.bclim"));
     assert(Float(layout.sections[parent],36)==8 && Float(layout.sections[parent],40)==-10);
     assert(Float(layout.sections[parent],60)==0 && Float(layout.sections[parent],64)==0);
     assert(Float(layout.sections[caption],36)==0 && Float(layout.sections[caption],40)==0);
@@ -70,7 +84,7 @@ int main(int argc,char** argv) {
     auto corrupt=original;Word(corrupt,36,UINT32_MAX);const auto invalid=corrupt;
     assert(PatchTitlePressA(corrupt,source)==0 && corrupt==invalid);
     if(argc==4) {
-        auto game=Load(argv[1]),other=Load(argv[2]);assert(PatchTitlePressA(game,other)==1);
+        auto game=Load(argv[1]),other=Load(argv[2]);assert(PatchTitlePressA(game,other,false)==1);
         Save(argv[3],game);std::vector<ArcEntry> files;assert(ReadArc(game,files));
         for(const auto& file:files) {
             const auto path=std::string(argv[3])+"."+file.name.substr(file.name.find_last_of('/')+1);

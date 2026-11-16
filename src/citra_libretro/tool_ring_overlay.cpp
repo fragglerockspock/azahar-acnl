@@ -208,8 +208,8 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         }
         if(prompt) {
             layer_alpha=cue.opacity;
-            const float diameter=h*.068f*cue.scale,pad=h*.025f;
-            const float cx=w-pad-h*.034f,cy=h-pad-h*.034f;
+            const float diameter=h*.078f*cue.scale,pad=h*.025f;
+            const float cx=w-pad-h*.102f,cy=h-pad-h*.046f;
             circle(cx+unit,cy+2*unit,diameter/2,{56,38,20,80});
             badge('A',cx,cy,diameter);
         }

@@ -22,6 +22,7 @@ put("test.cpp", r'''
 #include <iostream>
 #include <iterator>
 #include "core/leaf_acnl/ui.cpp"
+#include "core/leaf_acnl/layout_patch.h"
 std::vector<u8> Archive(const std::string& name, u8 seed) {
     const size_t offset=256, payload=64, size=payload+40;
     std::vector<u8> bytes(offset+size);
@@ -368,7 +369,7 @@ int main(int argc,char** argv) {
     assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
     assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
-    assert(UiStatus().find("UI FIX 2AG REG ")==0);
+    assert(UiStatus().find("UI FIX 2AH REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
     UiDraw(0x1500000,inventory_tag|tab|popup,{47,10,143,84});
@@ -614,17 +615,21 @@ int main(int argc,char** argv) {
         std::cout<<"Supplied Main Street map registry, HUD routing and touch passed\n";
     }
     ResetUi();
-    const auto logo=Register("Layout/Title/opng_titl.arc","my_ot_A_00.bclim",101);
-    const auto title_leaf=Register("Layout/Title/opng_titl.arc","ny_pct_leaf.bclim",102);
+    assert(Register("Layout/Title/opng_titl.arc","my_ot_A_00.bclim",101)==0);
+    assert(Register("Layout/Title/opng_titl.arc","ny_pct_leaf.bclim",102)==0);
     const auto title_window=Register("Layout/Title/opng_titl.arc","my_csw_LT.bclim",103);
     const auto title_cursor=Register("Layout/selWin/cmn_slct_win.arc","im_cmn_arrow32_00.bclim",104);
-    assert(logo==TitleLogo && title_leaf==TitlePress && title_window==TitleMenu);
+    const auto marker=LayoutPatch::TitleProbeTexture();
+    const auto title_archive=LayoutPatch::WriteArc({{"timg/leaf_title_tag.bclim",marker}});
+    RegisterUiArchive("Layout/Title/opng_titl.arc",title_archive);
+    const auto title_press=UiTexture(marker.data(),256,8,8);
+    assert(title_press==TitlePress && title_window==TitleMenu);
     SetUiAlphaReady(true);
-    UiTarget(0x10000,256,416,0,240,400);UiDraw(0x10000,logo);
+    UiTarget(0x10000,256,416,0,240,400);UiDraw(0x10000,0);
     u32 title_end=0,title_value=0,title_control=0;
     assert(UiAfterDisplayTransfer(0x10000,0x90000,256,400,240,400,0,title_end,title_value,title_control));
     UiTarget(0x10000,256,416,0,240,320);
-    UiDraw(0x10000,title_leaf|title_window);
+    UiDraw(0x10000,title_press|title_window);
     UiAfterDisplayTransfer(0x10000,0xc0000,256,320,240,320,0,title_end,title_value,title_control);
     FinishUiFrame(0xc0000);
     auto title_regions=UiRegions(522,240);assert(title_regions.size()==1);
@@ -632,7 +637,7 @@ int main(int argc,char** argv) {
     check_rect(title_regions[0].destination,{392,172,512,230});
     displayed.tags|=title_cursor;title_regions=UiRegions(522,240);
     check_rect(title_regions[0].destination,{142,47,380,217});
-    displayed.tags=title_leaf|title_window;title_regions=UiRegions(522,240);
+    displayed.tags=title_window;title_regions=UiRegions(522,240);
     check_rect(title_regions[0].destination,{142,47,380,217});
     displayed={};assert(UiRegions(522,240).empty());
     ResetUi();

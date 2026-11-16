@@ -288,10 +288,50 @@ inline bool WrapTitleAnimation(std::vector<ArcEntry>& entries) {
     }
     file->bytes=WriteLayout(l);return true;
 }
-inline size_t PatchTitlePressA(Bytes& bytes,const Bytes& donor_bytes) {
+inline Bytes TitleProbeTexture() {
+    constexpr size_t payload=8*8*4;
+    Bytes b(payload+40);
+    for(size_t i=0;i<payload;i+=4){b[i+1]=0x4c;b[i+2]=0x54;b[i+3]=0x50;}
+    std::memcpy(b.data()+payload,"CLIM",4);Half(b,payload+4,0xfeff);Half(b,payload+6,20);
+    Word(b,payload+8,0x02020000);Word(b,payload+12,b.size());Word(b,payload+16,1);
+    std::memcpy(b.data()+payload+20,"imag",4);Word(b,payload+24,16);
+    Half(b,payload+28,8);Half(b,payload+30,8);Word(b,payload+32,9);Word(b,payload+36,payload);
+    return b;
+}
+inline bool AddTitleProbe(std::vector<ArcEntry>& entries) {
+    auto* file=Find(entries,"blyt/opng_titl_00.bclyt");Layout l;
+    if(!file || !ReadLayout(file->bytes,"CLYT",l) || Pane(l,"P_leaf_title_tag")>=0)return false;
+    const int root=Pane(l,"RootPane"),parent=Pane(l,"N_leaf_press"),window=Pane(l,"W_leaf_press");
+    const int txl=Section(l,"txl1"),mat=Section(l,"mat1");
+    if(std::min({root,parent,window,txl,mat})<0 || l.sections[root].size()!=76)return false;
+    std::vector<std::string> names;std::vector<Bytes> materials;
+    if(!TextureNames(l.sections[txl],names) || !Materials(l.sections[mat],materials))return false;
+    const auto& frame=l.sections[window];const size_t content=Word(frame,96);
+    if(!Range(content,20,frame.size()))return false;
+    const size_t index=Half(frame,content+16);if(index>=materials.size())return false;
+    auto material=materials[index];
+    if(material.size()<56 || (Word(material,48)&3)!=1 || !Name(material,0,20,"M_leaf_title_tag"))return false;
+    Half(material,52,names.size());names.push_back("leaf_title_tag.bclim");
+    auto picture=l.sections[root];picture.resize(128);
+    std::memcpy(picture.data(),"pic1",4);Word(picture,4,picture.size());
+    Name(picture,12,24,"P_leaf_title_tag");picture[8]|=1;picture[10]=255;
+    for(size_t p=36;p<60;p+=4)Float(picture,p,0);
+    Float(picture,36,150);Float(picture,40,100);Float(picture,60,1);Float(picture,64,1);
+    Float(picture,68,1);Float(picture,72,1);std::fill(picture.begin()+76,picture.begin()+92,255);
+    Half(picture,92,materials.size());picture[94]=1;
+    const std::array<float,8> uv{0,0,1,0,0,1,1,1};
+    std::memcpy(picture.data()+96,uv.data(),sizeof(uv));
+    materials.push_back(std::move(material));
+    l.sections[txl]=TextureSection(names);l.sections[mat]=MaterialSection(materials);
+    l.sections.insert(l.sections.begin()+parent,std::move(picture));
+    file->bytes=WriteLayout(l);
+    entries.push_back({"bclim/leaf_title_tag.bclim",TitleProbeTexture()});
+    return true;
+}
+inline size_t PatchTitlePressA(Bytes& bytes,const Bytes& donor_bytes,bool identify=true) {
     std::vector<ArcEntry> target,donor;
     if(!ReadArc(bytes,target) || !ReadArc(donor_bytes,donor) ||
-       !GraftTitleWindow(target,donor) || !WrapTitleAnimation(target))return 0;
+       !GraftTitleWindow(target,donor) || !WrapTitleAnimation(target) || (identify && !AddTitleProbe(target)))return 0;
     auto result=WriteArc(target);if(result.empty())return 0;
     bytes=std::move(result);return 1;
 }
