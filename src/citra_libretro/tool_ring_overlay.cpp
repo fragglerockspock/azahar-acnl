@@ -174,10 +174,11 @@ ToolRingImage BuildToolRingImage(int width,int height) {
             rounded(left,top,right,bottom,radius,{184,151,99,255});
             rounded(left+unit,top+unit,right-unit,bottom-unit,std::max(1.0f,radius-unit),cream);
         };
-        const auto badge=[&](char letter,float cx,float cy,float diameter) {
+        const auto badge=[&](char letter,float cx,float cy,float diameter,float letter_scale=.9f) {
             circle(cx,cy,diameter/2,{90,155,117,255});
             circle(cx,cy,diameter/2-unit,{234,248,212,255});
-            text(std::string(1,letter),cx,cy-diameter*.45f,diameter*.9f,ink);
+            const float letter_height=diameter*letter_scale;
+            text(std::string(1,letter),cx,cy-letter_height/2,letter_height,ink);
         };
         const auto hint=[&](char button,const std::string& label,float center,float top,float height,bool boxed) {
             const float pad=std::max(3.0f,h*.009f),diameter=height*1.1f;
@@ -209,9 +210,9 @@ ToolRingImage BuildToolRingImage(int width,int height) {
         if(prompt) {
             layer_alpha=cue.opacity;
             const float diameter=h*.078f*cue.scale,pad=h*.025f;
-            const float cx=w-pad-h*.102f,cy=h-pad-h*.046f;
+            const float cx=w-pad-h*.180f,cy=h-pad-h*.046f;
             circle(cx+unit,cy+2*unit,diameter/2,{56,38,20,80});
-            badge('A',cx,cy,diameter);
+            badge('A',cx,cy,diameter,.72f);
         }
         if(visual.opacity>0 && (tools.empty() || std::getenv("LEAF_UI_DEBUG"))) {
             const auto status=LeafACNL::UiStatus();

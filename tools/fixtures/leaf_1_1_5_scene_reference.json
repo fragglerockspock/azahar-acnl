@@ -1,0 +1,322 @@
+{
+  "binary_sha256": "da588b82782669ca6170c0a139bbb649d9214779d80bd9b4619e1fba84bd60dc",
+  "builder": "0x20c4e50",
+  "scenes": [
+    {
+      "name": "choice",
+      "requires_any": [
+        "selWin/slct_win.arc:"
+      ],
+      "requires_all": [],
+      "regions": [
+        {
+          "name": "choice_bubble",
+          "source": [
+            40.0,
+            1.0,
+            280.0,
+            216.0
+          ],
+          "target": [
+            0.9649999737739563,
+            0.5400000214576721
+          ],
+          "origin": [
+            1.0,
+            1.0
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 0.800000011920929
+        }
+      ]
+    },
+    {
+      "name": "choice_map",
+      "requires_any": [
+        "selWin/slct_win.arc:"
+      ],
+      "requires_all": [
+        "Menu/map_*"
+      ],
+      "regions": []
+    },
+    {
+      "name": "title",
+      "requires_any": [],
+      "requires_all": [
+        "Title/opng_titl.arc:my_opn_bg_01.bclim"
+      ],
+      "regions": [
+        {
+          "name": "title_press",
+          "source": [
+            60.0,
+            84.0,
+            260.0,
+            156.0
+          ],
+          "target": [
+            0.5,
+            0.8600000143051147
+          ],
+          "origin": [
+            0.5,
+            0.5
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 0.949999988079071
+        }
+      ]
+    },
+    {
+      "name": "title_menu",
+      "requires_any": [],
+      "requires_all": [
+        "selWin/cmn_slct_win.arc:im_cmn_arrow32_00.bclim",
+        "Title/opng_titl.arc:my_opn_bg_01.bclim"
+      ],
+      "regions": [
+        {
+          "name": "title_menu",
+          "source": [
+            20.0,
+            20.0,
+            300.0,
+            220.0
+          ],
+          "target": [
+            0.5,
+            0.550000011920929
+          ],
+          "origin": [
+            0.5,
+            0.5
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 0.8500000238418579
+        }
+      ]
+    },
+    {
+      "name": "map_pick",
+      "requires_any": [
+        "Menu/map_village.arc:",
+        "Menu/map_island.arc:",
+        "Menu/map_lobby.arc:",
+        "Menu/map_exb.arc:"
+      ],
+      "requires_all": [
+        "common/cmn_btn.arc:my_cbn_btn.bclim"
+      ],
+      "regions": []
+    },
+    {
+      "name": "cat_tasks",
+      "requires_any": [
+        "Menu/menu_tab.arc:"
+      ],
+      "requires_all": [],
+      "regions": []
+    },
+    {
+      "name": "board",
+      "requires_any": [
+        "Board/board.arc:"
+      ],
+      "requires_all": [
+        "Board/board.arc:tc_board_btn_00.bclim"
+      ],
+      "regions": []
+    },
+    {
+      "name": "board_dialog",
+      "requires_any": [
+        "Board/board.arc:"
+      ],
+      "requires_all": [
+        "Board/board.arc:tc_board_btn_00.bclim",
+        "common/cmn_dialog_A.arc:my_cmn_ballon_XXL.bclim"
+      ],
+      "regions": []
+    },
+    {
+      "name": "letter_preview",
+      "requires_any": [
+        "Item/Model/letter_*"
+      ],
+      "requires_all": [],
+      "regions": [
+        {
+          "name": "letter_preview",
+          "source": [
+            0.0,
+            0.0,
+            320.0,
+            240.0
+          ],
+          "target": [
+            0.5,
+            0.5
+          ],
+          "origin": [
+            0.5,
+            0.5
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 1.0
+        }
+      ]
+    },
+    {
+      "name": "coupons",
+      "requires_any": [
+        "ticket/ticket.arc:"
+      ],
+      "requires_all": [],
+      "regions": []
+    },
+    {
+      "name": "map_show",
+      "requires_any": [
+        "Menu/map_village.arc:",
+        "Menu/map_island.arc:",
+        "Menu/map_lobby.arc:",
+        "Menu/map_exb.arc:"
+      ],
+      "requires_all": [],
+      "regions": [
+        {
+          "name": "map_show",
+          "source": [
+            0.0,
+            0.0,
+            320.0,
+            224.0
+          ],
+          "target": [
+            0.5,
+            0.48500001430511475
+          ],
+          "origin": [
+            0.5,
+            1.0
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 0.5
+        }
+      ]
+    },
+    {
+      "name": "keyboard",
+      "requires_any": [
+        "Swkbd/swkbd_qwerty.arc:",
+        "Swkbd/swkbd_kana.arc:",
+        "Swkbd/swkbd_grid.arc:",
+        "Swkbd/swkbd_cell.arc:"
+      ],
+      "requires_all": [],
+      "regions": []
+    },
+    {
+      "name": "tab_screen",
+      "requires_any": [
+        "Menu/menu_tab.arc:"
+      ],
+      "requires_all": [],
+      "regions": [
+        {
+          "name": "tab_screen",
+          "source": [
+            0.0,
+            1.0,
+            320.0,
+            240.0
+          ],
+          "target": [
+            0.5,
+            0.5
+          ],
+          "origin": [
+            0.5,
+            0.5
+          ],
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "scale": 1.0
+        }
+      ]
+    },
+    {
+      "name": "town_hud",
+      "requires_any": [
+        "Menu/menu_tab.arc:"
+      ],
+      "requires_all": [
+        "Menu/menu_tab.arc:my_men_btn_00.bclim"
+      ],
+      "regions": [
+        {
+          "name": "hud_tabs",
+          "source": [
+            0.0,
+            0.0,
+            210.0,
+            25.0
+          ],
+          "target": [
+            0.0,
+            0.0
+          ],
+          "origin": [
+            0.0,
+            0.0
+          ],
+          "offset": [
+            4.0,
+            0.0
+          ],
+          "scale": 1.0
+        },
+        {
+          "name": "hud_map",
+          "source": [
+            64.0,
+            26.0,
+            280.0,
+            214.0
+          ],
+          "target": [
+            1.0,
+            1.0
+          ],
+          "origin": [
+            1.0,
+            1.0
+          ],
+          "offset": [
+            -4.0,
+            -4.0
+          ],
+          "scale": 0.41999998688697815
+        }
+      ]
+    }
+  ]
+}
