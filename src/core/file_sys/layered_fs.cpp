@@ -126,9 +126,9 @@ void LayeredFS::Load() {
                 auto changes = LeafACNL::PatchTopLayoutScale(bytes,correction)+
                                LeafACNL::PatchLeafPaneMasks(path,bytes)+
                                LeafACNL::PatchLeafFade(path,bytes,correction);
-                const auto mail_anchor=LeafACNL::LayoutPatch::PatchInventoryMailAnchor(path,bytes);
-                changes+=mail_anchor;
-                if(mail_anchor)LOG_INFO(Service_FS,"Leaf inventory mail anchor layout experiment active: +12 X");
+                const auto compact=LeafACNL::LayoutPatch::PatchCompactPocket(path,bytes);
+                changes+=compact;
+                if(compact)LOG_INFO(Service_FS,"Leaf compact pocket prototype 1 active: 8x2 guest layout");
                 if (path.find("Layout/Title/opng_titl.arc")!=std::string::npos &&
                     LeafACNL::LayoutPatch::PatchTitlePressA(bytes,title_window_source)) {
                     ++changes;

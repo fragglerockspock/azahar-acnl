@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cmath>
 #include <map>
 #include <string>
 #include <string_view>
@@ -327,6 +328,74 @@ inline bool WrapTitleAnimation(std::vector<ArcEntry>& entries) {
         if(!animation || !RetargetAnimation(animation->bytes,"T_tex_00","N_leaf_press"))return false;
     }
     file->bytes=WriteLayout(l);return true;
+}
+inline Bytes CompactPocketTexture() {
+    constexpr size_t width=256,height=128,payload=width*height*4;
+    Bytes b(payload+40);
+    for(size_t y=0;y<height;++y)for(size_t x=0;x<width;++x) {
+        size_t morton=0;
+        for(size_t bit=0;bit<3;++bit)morton|=((x>>bit)&1)<<(bit*2)|((y>>bit)&1)<<(bit*2+1);
+        const size_t p=(((y/8)*(width/8)+x/8)*64+morton)*4;
+        const float nx=(float(x)+.5f-128)/126,ny=(float(y)+.5f-64)/62;
+        const float edge=nx*nx*nx*nx+ny*ny*ny*ny;
+        b[p]=static_cast<u8>(std::clamp((1.015f-edge)*8500,0.0f,255.0f));
+        b[p+1]=230;b[p+2]=248;b[p+3]=255;
+    }
+    std::memcpy(b.data()+payload,"CLIM",4);Half(b,payload+4,0xfeff);Half(b,payload+6,20);
+    Word(b,payload+8,0x02020000);Word(b,payload+12,b.size());Word(b,payload+16,1);
+    std::memcpy(b.data()+payload+20,"imag",4);Word(b,payload+24,16);
+    Half(b,payload+28,width);Half(b,payload+30,height);Word(b,payload+32,9);Word(b,payload+36,payload);
+    return b;
+}
+inline size_t PatchCompactPocket(std::string_view path,Bytes& bytes) {
+    if(path.find("Layout/ItemWin/item_scrn.arc")==std::string_view::npos)return 0;
+    std::vector<ArcEntry> entries;
+    if(!ReadArc(bytes,entries))return 0;
+    auto* file=Find(entries,"blyt/item_scrn.bclyt");Layout l;
+    if(!file || !ReadLayout(file->bytes,"CLYT",l) || Pane(l,"P_leaf_pocket")>=0)return 0;
+    const int bg=Pane(l,"P_bg_C"),txl=Section(l,"txl1"),mat=Section(l,"mat1"),slot=Pane(l,"P_itm_00");
+    if(std::min({bg,txl,mat,slot})<0 || l.sections[slot].size()<96)return 0;
+    std::vector<std::string> names;std::vector<Bytes> materials;
+    if(!TextureNames(l.sections[txl],names) || !Materials(l.sections[mat],materials))return 0;
+    const size_t index=Half(l.sections[slot],92);
+    if(index>=materials.size())return 0;
+    auto material=materials[index];
+    if(material.size()<76 || (Word(material,48)&3)!=1 || !Name(material,0,20,"M_leaf_pocket"))return 0;
+    Half(material,52,names.size());names.push_back("leaf_pocket_panel.bclim");
+    Float(material,56,0);Float(material,60,0);Float(material,64,0);Float(material,68,1);Float(material,72,1);
+    auto picture=l.sections[slot];Name(picture,12,24,"P_leaf_pocket");
+    picture[8]|=1;picture[10]=255;
+    for(size_t p=36;p<60;p+=4)Float(picture,p,0);
+    Float(picture,40,18);Float(picture,60,1);Float(picture,64,1);Float(picture,68,308);Float(picture,72,140);
+    std::fill(picture.begin()+76,picture.begin()+92,255);Half(picture,92,materials.size());
+    materials.push_back(std::move(material));
+    for(size_t n=0;n<16;++n) {
+        const auto name=std::string("P_itm_")+(n<10 ? "0" : "")+std::to_string(n);
+        const int i=Pane(l,name);if(i<0 || l.sections[i].size()<76)return 0;
+        auto& p=l.sections[i];Float(p,36,-126+36*static_cast<float>(n%8));
+        Float(p,40,n<8 ? 50 : 10);Float(p,60,.48f);Float(p,64,.48f);
+    }
+    for(const auto name:{"P_bs_00","P_slct_crsl_00"}) {
+        const int i=Pane(l,name);if(i>=0){Float(l.sections[i],60,.48f);Float(l.sections[i],64,.48f);}
+    }
+    const int bell=Pane(l,"N_bell"),mail=Pane(l,"N_pos_ltr"),chara=Pane(l,"N_pos_chara");
+    if(std::min({bell,mail,chara})<0)return 0;
+    Float(l.sections[bell],36,145);Float(l.sections[bell],40,-32);
+    Float(l.sections[mail],36,-106);Float(l.sections[mail],40,-32);
+    Float(l.sections[chara],36,0);Float(l.sections[chara],40,-34);
+    const int cursor=Pane(l,"N_itm_crsl_00");
+    if(cursor>=0){Float(l.sections[cursor],36,-126);Float(l.sections[cursor],40,50);}
+    l.sections[txl]=TextureSection(names);l.sections[mat]=MaterialSection(materials);
+    l.sections.insert(l.sections.begin()+bg,picture);file->bytes=WriteLayout(l);
+    auto* character=Find(entries,"blyt/item_scrn_chara.bclyt");Layout c;
+    if(!character || !ReadLayout(character->bytes,"CLYT",c))return 0;
+    for(auto& section:c.sections)if(Type(section,"pic1") && section.size()>=76) {
+        Float(section,68,0);Float(section,72,0);
+    }
+    character->bytes=WriteLayout(c);
+    entries.push_back({"bclim/leaf_pocket_panel.bclim",CompactPocketTexture()});
+    auto result=WriteArc(entries);if(result.empty())return 0;
+    bytes=std::move(result);return 1;
 }
 inline Bytes TitleProbeTexture() {
     constexpr size_t payload=8*8*4;
