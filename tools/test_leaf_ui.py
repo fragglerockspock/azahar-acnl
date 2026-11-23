@@ -100,21 +100,21 @@ int main(int argc,char** argv) {
     UiTransfer(100,200);
     FinishUiFrame(200);
     auto regions=UiRegions(522,240);
-    assert(regions.size()==1 && regions[0].shade==.45f);
-    assert(regions[0].destination.left==100 && regions[0].destination.right==422);
+    assert(regions.size()==4 && regions[0].shade==.45f);
+    assert(regions[0].destination.left==101 && regions[0].destination.right==421);
     float tx=0,ty=0;
     assert(UiTouch(261,120,522,240,tx,ty));
-    assert(std::abs(tx-.5f)<.0001f && std::abs(ty-120.5f/240)<.0001f);
+    assert(std::abs(tx-.5f)<.0001f && std::abs(ty-120.0f/240)<.0001f);
     assert(!UiTouch(0,120,522,240,tx,ty));
     const size_t pitch=522*4+16;
     std::vector<u8> output(pitch*240,200), bottom(320*240*4);
     for(size_t i=0;i<bottom.size();i+=4){bottom[i]=10;bottom[i+1]=20;bottom[i+2]=30;bottom[i+3]=255;}
     CompositeUi(output.data(),pitch,522,240,bottom.data(),bottom.size(),320);
     assert(output[0]==110 && output[3]==200);
-    assert(output[pitch+101*4]==30 && output[pitch+101*4+1]==20 && output[pitch+101*4+2]==10 && output[pitch+101*4+3]==200);
+    assert(output[101*4]==30 && output[101*4+1]==20 && output[101*4+2]==10 && output[101*4+3]==200);
     assert(output[522*4]==200);
     for(int frame=0;frame<180;++frame) FinishUiFrame(200);
-    assert(UiRegions(522,240).size()==1);
+    assert(UiRegions(522,240).size()==4);
     UiDraw(100,hud);
     UiTransfer(100,201);
     FinishUiFrame(201);
@@ -163,13 +163,13 @@ int main(int argc,char** argv) {
     assert(UiRegions(522,240).size()==3);
     UiCommandComplete();
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiTransfer(300,901);
     FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,hud);
     for(int frame=0;frame<180;++frame) FinishUiFrame(900);
-    assert(UiRegions(522,240).size()==1 && UiRegions(522,240)[0].shade==.45f);
+    assert(UiRegions(522,240).size()==4 && UiRegions(522,240)[0].shade==.45f);
     UiDraw(300,map,{64,26,280,214});
     UiTransfer(300,902);
     FinishUiFrame(902);
@@ -363,12 +363,12 @@ int main(int argc,char** argv) {
     assert(inventory_tag==512);
     UiDraw(0x1500000,inventory_tag);UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
     const auto inventory=UiRegions(522,240);
-    assert(inventory.size()==1 && inventory[0].preserve_color);
-    check_rect(inventory[0].source,{0,1,320,240});
-    check_rect(inventory[0].destination,{100,0,422,240});
+    assert(inventory.size()==4 && inventory[0].source.top==25);
+    check_rect(inventory[1].destination,{4,0,56,25});
+    check_rect(inventory[2].destination,{56,0,108,25});
+    assert(inventory[2].preserve_color && !inventory[1].preserve_color && !inventory[3].preserve_color);
     assert(!UiTouch(500,10,522,240,tx,ty));
-    assert(!UiTouch(10,10,522,240,tx,ty));
-    assert(UiTouch(111,10,522,240,tx,ty) && tx<.1f && ty<.1f);
+    assert(UiTouch(10,10,522,240,tx,ty) && tx<.1f && ty<.1f);
     assert(UiStatus().find("UI FIX 2AH REG ")==0);
     const auto popup=Register("Layout/ItemWin/itm_slct_win.arc","my_itm_window.bclim",123);
     assert(popup==1024);
@@ -376,28 +376,21 @@ int main(int argc,char** argv) {
     UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
     const auto popup_regions=UiRegions(522,240);
     const auto& window=popup_regions.back();
-    assert(popup_regions.size()==1);
-    check_rect(window.source,{0,1,320,240});
-    check_rect(window.destination,{100,0,422,240});
-    for(const float width:{400.0f,522.0f,928.0f}) {
-        const auto menus=UiRegions(width,240);
-        assert(menus.size()==1 && menus[0].preserve_color);
-        check_rect(menus[0].source,{0,1,320,240});
-        const auto destination=menus[0].destination;
-        for(const auto& point:{std::pair<float,float>{40,8},{150,15},{180,120}}) {
-            assert(UiTouch(destination.left+point.first/320*(destination.right-destination.left),
-                           (point.second-1)/239*240,width,240,tx,ty));
-            assert(std::abs(tx-point.first/320)<.0001f && std::abs(ty-point.second/240)<.0001f);
-        }
+    check_rect(window.source,{44,7,146,87});
+    check_rect(window.destination,{145,7,247,87});
+    for(size_t i=0;i+1<popup_regions.size();++i) {
+        const auto a=popup_regions[i].source,b=window.source;
+        assert(std::min(a.right,b.right)<=std::max(a.left,b.left) ||
+               std::min(a.bottom,b.bottom)<=std::max(a.top,b.top));
     }
     assert(UiTouch(196,30,522,240,tx,ty));
-    assert(std::abs(tx-96.0f/322)<.0001f && std::abs(ty-30.875f/240)<.0001f);
+    assert(std::abs(tx-95.0f/320)<.0001f && std::abs(ty-30.0f/240)<.0001f);
     const auto dialog=Register("Layout/common/cmn_dialog_A.arc","my_cmn_ballon_XXL.bclim",124);
     assert(dialog==2048);
     UiDraw(0x1500000,inventory_tag|tab|dialog,{30,18,290,221});
     UiTransfer(0x1500000,0x1700000);FinishUiFrame(0x1700000);
-    check_rect(UiRegions(522,240).back().source,{0,1,320,240});
-    check_rect(UiRegions(522,240).back().destination,{100,0,422,240});
+    check_rect(UiRegions(522,240).back().source,{27,15,293,224});
+    check_rect(UiRegions(522,240).back().destination,{128,15,394,224});
     const auto pink=UiKeyPixel(.95f,.3f,.65f,true);
     assert(pink[0]==.95f && pink[1]==.3f && pink[2]==.65f && pink[3]==1);
     assert(UiKeyPixel(.95f,.3f,.65f)[3]<1);
@@ -494,7 +487,7 @@ int main(int argc,char** argv) {
     begin_bottom();UiDraw(scratch,transition_choice,{500,500,510,510});end_bottom();
     assert(UiRegions(522,240).empty());
     begin_bottom();UiDraw(scratch,transition_inventory);end_bottom();
-    assert(displayed.tags==transition_inventory && UiRegions(522,240).size()==1);
+    assert(displayed.tags==transition_inventory && UiRegions(522,240).size()==4);
     begin_bottom();UiDraw(scratch,transition_title);end_bottom();
     assert(UiRegions(522,240).size()==1);
     begin_bottom();end_bottom();

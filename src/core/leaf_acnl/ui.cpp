@@ -535,12 +535,15 @@ std::vector<UiRegion> UiRegions(float width, float height) {
     if ((tags&Map) && !(tags&Tab))
         return {Region({0,0,320,224},width,height,.5f,.485f,.5f,1,.5f)};
     if ((tags&(Inventory|ItemPopup|Dialog)) || ((tags&Tab) && !(tags&HudButton))) {
-        auto menu=Region({0,1,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
-        menu.shade=.45f;
-        menu.preserve_color=true;
-        return {menu};
+        const auto full=Region({0,0,320,240},width,height,.5f,.5f,.5f,.5f,1,0,0,true);
+        const auto popup=(tags&(ItemPopup|Dialog)) && displayed.popup.Valid() ? Crop(displayed.popup,3) : UiRect{};
+        std::vector<UiRegion> regions;
+        AppendOutside(regions,Slice(full,{0,25,320,240}),popup);
+        AppendTabs(regions,width,height,popup);
+        if(popup.Valid())regions.push_back(Slice(full,popup));
+        if(!regions.empty())regions[0].shade=.45f;
+        return regions;
     }
-
     if ((tags&Tab) && (tags&HudButton)) {
         std::vector<UiRegion> regions;
         AppendTabs(regions,width,height);

@@ -148,6 +148,46 @@ inline int Pane(const Layout& l,std::string_view name) {
     }
     return -1;
 }
+inline size_t PatchInventoryMailAnchor(std::string_view path,Bytes& bytes) {
+    const auto prefix=path.find("Layout/");
+    if(prefix!=std::string_view::npos)path.remove_prefix(prefix+7);
+    if(path!="ItemWin/item_scrn.arc")return 0;
+    std::vector<ArcEntry> entries;
+    if(!ReadArc(bytes,entries))return 0;
+    auto* entry=Find(entries,"blyt/item_scrn.bclyt");
+    if(!entry)return 0;
+    Layout layout;
+    if(!ReadLayout(entry->bytes,"CLYT",layout) || Pane(layout,"N_leaf_mail")>=0)return 0;
+    const int index=Pane(layout,"N_pos_ltr");
+    if(index<0)return 0;
+    const auto& anchor=layout.sections[index];
+    if(!Type(anchor,"pan1") || anchor.size()!=76 ||
+       Float(anchor,36)!=-101 || Float(anchor,40)!=58)return 0;
+    Bytes parent=anchor;
+    Name(parent,12,24,"N_leaf_mail");
+    for(size_t p=36;p<60;p+=4)Float(parent,p,0);
+    Float(parent,36,12);Float(parent,60,1);Float(parent,64,1);
+    parent[8]=1;parent[9]=anchor[9];parent[10]=255;
+    Bytes begin(8),end(8);
+    std::memcpy(begin.data(),"pas1",4);Word(begin,4,8);
+    std::memcpy(end.data(),"pae1",4);Word(end,4,8);
+    size_t after=index+1;
+    if(after<layout.sections.size() && Type(layout.sections[after],"pas1")) {
+        int depth=0;
+        do {
+            if(Type(layout.sections[after],"pas1"))++depth;
+            if(Type(layout.sections[after],"pae1"))--depth;
+            ++after;
+        } while(after<layout.sections.size() && depth>0);
+        if(depth)return 0;
+    }
+    layout.sections.insert(layout.sections.begin()+after,end);
+    layout.sections.insert(layout.sections.begin()+index,{parent,begin});
+    entry->bytes=WriteLayout(layout);
+    auto patched=WriteArc(entries);
+    if(patched.empty())return 0;
+    bytes=std::move(patched);return 1;
+}
 inline bool TextureNames(const Bytes& b,std::vector<std::string>& names) {
     const size_t count=Half(b,8);
     if(!Range(12,count*4,b.size()) || count>1024)return false;
