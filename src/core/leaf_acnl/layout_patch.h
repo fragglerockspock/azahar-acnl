@@ -361,6 +361,7 @@ inline size_t PatchCompactPocket(std::string_view path,Bytes& bytes) {
     if(index>=materials.size())return 0;
     auto material=materials[index];
     if(material.size()<76 || (Word(material,48)&3)!=1 || !Name(material,0,20,"M_leaf_pocket"))return 0;
+    std::fill(material.begin()+24,material.begin()+28,255);
     Half(material,52,names.size());names.push_back("leaf_pocket_panel.bclim");
     Float(material,56,0);Float(material,60,0);Float(material,64,0);Float(material,68,1);Float(material,72,1);
     auto picture=l.sections[slot];Name(picture,12,24,"P_leaf_pocket");
