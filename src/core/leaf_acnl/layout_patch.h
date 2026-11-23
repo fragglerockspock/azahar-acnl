@@ -223,6 +223,71 @@ inline Bytes MaterialSection(const std::vector<Bytes>& materials) {
     }
     Word(b,4,b.size());return b;
 }
+inline bool PatchHudMailProbe(Bytes& bytes,const Bytes& donor_bytes) {
+    std::vector<ArcEntry> target,donor;
+    if(!ReadArc(bytes,target) || !ReadArc(donor_bytes,donor))return false;
+    auto* dst=Find(target,"blyt/menu_tab.bclyt");
+    const auto* src=Find(donor,"blyt/item_scrn_ltr.bclyt");
+    Layout d,s;
+    if(!dst || !src || !ReadLayout(dst->bytes,"CLYT",d) ||
+       !ReadLayout(src->bytes,"CLYT",s) || Pane(d,"N_leaf_mail_hud")>=0)return false;
+    const int dt=Section(d,"txl1"),st=Section(s,"txl1"),dm=Section(d,"mat1"),sm=Section(s,"mat1"),root=Pane(d,"RootPane");
+    if(std::min({dt,st,dm,sm,root})<0 || d.sections[root].size()!=76)return false;
+    std::vector<std::string> textures,source_textures;
+    std::vector<Bytes> materials,source_materials;
+    if(!TextureNames(d.sections[dt],textures) || !TextureNames(s.sections[st],source_textures) ||
+       !Materials(d.sections[dm],materials) || !Materials(s.sections[sm],source_materials))return false;
+    std::vector<Bytes> pictures;
+    std::vector<ArcEntry> additions;
+    for(const auto name:{"P_btn","P_ltr"}) {
+        const int index=Pane(s,name);
+        if(index<0)return false;
+        auto picture=s.sections[index];
+        if(!Type(picture,"pic1") || picture.size()<96)return false;
+        const size_t old=Half(picture,92);
+        if(old>=source_materials.size())return false;
+        auto material=source_materials[old];
+        if(!Name(material,0,20,std::string("leaf_mail_")+name))return false;
+        const size_t maps=Word(material,48)&3;
+        if(!Range(52,maps*4,material.size()))return false;
+        for(size_t j=0;j<maps;++j) {
+            const size_t position=52+j*4,texture_index=Half(material,position);
+            if(texture_index>=source_textures.size())return false;
+            const auto& texture=source_textures[texture_index];
+            auto found=std::find(textures.begin(),textures.end(),texture);
+            if(found==textures.end()) {
+                const auto entry=std::find_if(donor.begin(),donor.end(),[&](const auto& e){return e.name=="bclim/"+texture || e.name=="timg/"+texture;});
+                if(entry==donor.end())return false;
+                additions.push_back({"bclim/"+texture,entry->bytes});
+                textures.push_back(texture);found=textures.end()-1;
+            }
+            Half(material,position,std::distance(textures.begin(),found));
+        }
+        Half(picture,92,materials.size());materials.push_back(std::move(material));
+        Name(picture,12,24,std::string("P_leaf_mail_")+name);
+        picture[8]|=1;picture[10]=255;
+        pictures.push_back(std::move(picture));
+    }
+    Bytes parent=d.sections[root];Name(parent,12,24,"N_leaf_mail_hud");
+    for(size_t p=36;p<60;p+=4)Float(parent,p,0);
+    Float(parent,36,22);Float(parent,40,108);Float(parent,60,.7f);Float(parent,64,.7f);
+    Float(parent,68,0);Float(parent,72,0);parent[8]=1;parent[10]=255;
+    Bytes begin(8),end(8);std::memcpy(begin.data(),"pas1",4);Word(begin,4,8);
+    std::memcpy(end.data(),"pae1",4);Word(end,4,8);
+    size_t attach=root+1;
+    if(attach>=d.sections.size() || !Type(d.sections[attach],"pas1"))return false;
+    int depth=0;
+    for(;attach<d.sections.size();++attach) {
+        if(Type(d.sections[attach],"pas1"))++depth;
+        if(Type(d.sections[attach],"pae1") && --depth==0)break;
+    }
+    if(attach==d.sections.size())return false;
+    d.sections[dt]=TextureSection(textures);d.sections[dm]=MaterialSection(materials);
+    d.sections.insert(d.sections.begin()+attach,{parent,begin,pictures[0],pictures[1],end});
+    dst->bytes=WriteLayout(d);target.insert(target.end(),additions.begin(),additions.end());
+    auto output=WriteArc(target);if(output.empty())return false;
+    bytes=std::move(output);return true;
+}
 inline bool GraftTitleWindow(std::vector<ArcEntry>& target,std::vector<ArcEntry>& donor) {
     auto* dst=Find(target,"blyt/opng_titl_00.bclyt");const auto* src=Find(donor,"blyt/cmn_slct_win.bclyt");
     Layout d,s;

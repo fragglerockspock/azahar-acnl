@@ -98,7 +98,15 @@ void LayeredFS::Load() {
                              static_cast<float>(Settings::acnl_camera_aspect_height.load());
         const float correction = (400.0f / 240.0f) / aspect;
         if (correction > 0.0f && correction < 2.0f) {
-            std::vector<u8> title_window_source;
+            std::vector<u8> title_window_source,mail_probe_source;
+            for(const auto& [path,file]:file_path_map) {
+                if(path.find("Layout/ItemWin/item_scrn.arc")==std::string::npos ||
+                   file->relocation.type!=0 || file->relocation.size>4*1024*1024)continue;
+                mail_probe_source.resize(file->relocation.size);
+                if(romfs->ReadFile(file->relocation.original_offset,mail_probe_source.size(),
+                                  mail_probe_source.data())!=mail_probe_source.size())mail_probe_source.clear();
+                break;
+            }
             for (const auto& [path,file] : file_path_map) {
                 if (path.find("Layout/selWin/cmn_slct_win.arc")==std::string::npos ||
                     file->relocation.type!=0 || file->relocation.size>4*1024*1024) continue;
@@ -134,6 +142,11 @@ void LayeredFS::Load() {
                     ++changes;
                     LeafACNL::RegisterUiArchive(path,bytes);
                     LOG_INFO(Service_FS,"Leaf native title window graft and animation wrapper active");
+                }
+                if(path.find("Layout/Menu/menu_tab.arc")!=std::string::npos &&
+                   LeafACNL::LayoutPatch::PatchHudMailProbe(bytes,mail_probe_source)) {
+                    ++changes;
+                    LOG_INFO(Service_FS,"Leaf guest-rendered HUD mail visual probe active");
                 }
                 if (changes != 0) {
                     file->relocation.type = 2;
